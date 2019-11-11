@@ -1,7 +1,7 @@
 from tensorflow import keras
 import tensorflow_probability as tfp
 import tensorflow as tf
-from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS
+from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS, COLUMNS
 import math
 import numpy as np
 
@@ -11,13 +11,13 @@ def createClassifier():
     _initialization = 'glorot_normal'
     _nodes = 64
 
-    _inputs = keras.Input(shape=(8), name="input")
+    _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(_inputs)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
-    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization)(x)
+    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, name="outputClassifier")(x)
 
-    model = keras.Model(inputs=_inputs, outputs=_outputs)
+    model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
 
     return model
 
@@ -26,8 +26,23 @@ def JensenShannonDivergence(y_true, y_pred):
     m = (y_true + y_pred)/2.0
     return tf.reduce_sum((k(y_true, m) + k(y_pred, m))/2.0, axis=0)
 
-def createChainedModel(classifier, adversary):
-    return keras.Model(input=classifier.input, output=adversary(classifier.output))
+def createChainedModel(classifier):
+    event_shape = [1]
+    numberOfGaussians = 20
+
+    params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
+                                                              component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
+
+    input = classifier.input
+    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
+    x = keras.layers.Concatenate()([classifier.output, auxiliary])
+    x = keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
+    x = keras.layers.Dense(params_size, activation=None)(x)
+    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape)(x)
+
+    return keras.Model(inputs=[input, auxiliary],
+                       outputs=out,
+                       name="ChainedModel")
 
 def createAdversary():
     event_shape = [1]
@@ -36,14 +51,23 @@ def createAdversary():
 
     params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
                                                               component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
-    model = tf.keras.Sequential([
-        keras.Input(shape=(1), name='input'),
-        keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden'),
-        keras.layers.Dense(params_size, activation=None),
-#        tfp.layers.MixtureSameFamily(numberOfGaussians, tfp.layers.IndependentNormal(event_shape)),
-        tfp.layers.MixtureNormal(numberOfGaussians, event_shape),
-#        keras.layers.Dense(PTBINS, activation=tf.nn.softmax, kernel_initializer='glorot_uniform')
-    ])
+
+    inputs = keras.Input(shape=(1), name="inputAdversary")
+    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
+    x = keras.layers.Concatenate()([inputs, auxiliary])
+    x = keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
+    x = keras.layers.Dense(params_size, activation=None)(x)
+    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape)(x)
+
+    model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
+
+#     model = tf.keras.Sequential([
+#         keras.Input(shape=(1), name='input'),
+#         keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden'),
+#         keras.layers.Dense(params_size, activation=None),
+#         tfp.layers.MixtureNormal(numberOfGaussians, event_shape),
+# #        keras.layers.Dense(PTBINS, activation=tf.nn.softmax, kernel_initializer='glorot_uniform')
+#     ])
     return model
 
 

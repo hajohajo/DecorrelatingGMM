@@ -13,13 +13,13 @@ def sigmoid(x):
 def makeDistributions(nSamples, mass, eventType):
     isSignal = (eventType is "ChargedHiggs")
     metFractions = rand(nSamples)
-    tauPt = np.clip((1-np.exp(-0.01*mass)), 0.0, 1.0) * mass + randn(mass.shape[0]) #(1 - metFractions) * mass
+    tauPt = np.clip(np.clip((1-np.exp(-0.01*mass)), 0.0, 1.0) * mass + randn(mass.shape[0]), 5.0, 200.0)
     MET = mass-tauPt
     if isSignal:
         ldgTrkPtFrac = sigmoid(4 * rand(nSamples))
     else:
         ldgTrkPtFrac = sigmoid(8 * rand(nSamples) - 4.0)
-    bjetPt = np.random.exponential(60.0, nSamples)
+    bjetPt = np.clip(np.random.exponential(60.0, nSamples), 5.0, 200.0)
     deltaPhiTauMet = rand(nSamples) * np.pi
     deltaPhiTauBjet = rand(nSamples) * np.pi
     deltaPhiBjetMet = rand(nSamples) * np.pi

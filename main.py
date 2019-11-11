@@ -1,24 +1,25 @@
 from generateDummyData import generateSamples
 from utilities import createDirectories
 from plotting import createDistributionComparison
-from neuralNetworks import train_test_Classifier, createClassifier, createAdversary, createAdversary, JensenShannonDivergence
+from neuralNetworks import train_test_Classifier, createClassifier, createAdversary, createAdversary, JensenShannonDivergence, createChainedModel
 import pandas as pd
 from tensorboard.plugins.hparams import api as hp
-from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, METRIC_ACCURACY, HP_ACTIVATION, HP_NUM_HIDDEN_LAYERS, BATCHSIZE, PTBINS, PTMIN, PTMAX
+from hyperOptimization import COLUMNS, HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, METRIC_ACCURACY, HP_ACTIVATION, HP_NUM_HIDDEN_LAYERS, BATCHSIZE, PTBINS, PTMIN, PTMAX
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.utils import class_weight, compute_sample_weight
 
 from sklearn.model_selection import train_test_split
-
+from tqdm import tqdm
 
 import numpy as np
 import tensorflow as tf
+
 import tensorflow_probability as tfp
 import neural_structured_learning as nsl
 
 tf.random.set_seed(13)
-tf.executing_eagerly()
+tf.compat.v1.disable_eager_execution()
 
 def setTrainable(model, isTrainable):
     model.trainable = isTrainable
@@ -59,86 +60,131 @@ def hyperOptimizeClassifier(train_data, test_data):
 def main():
     TESTSET_SIZE = 10000
 #    columns = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
-    columns = ["tauPt, TransverseMass"]
+    columns = COLUMNS
 
     createDirectories()
     signal = generateSamples(1000, isSignal=True)
-    background = generateSamples(500000, isSignal=False)
+    background = generateSamples(50000, isSignal=False)
 #    createDistributionComparison(signal, background, columns=columns)
-    allData = background #signal.append(background, ignore_index=True)
+    allData = signal.append(background, ignore_index=True)
+    print(allData.columns.values)
+    allData=allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
-    allData_mass = allData["TransverseMass"].copy()
+    allData["logPt"] = np.log(allData["tauPt"].copy().values)
 
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
-    # width=binning[1]-binning[0]
     digitized = np.digitize(np.clip(allData['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False) - 1
-    # binContent, _ = np.histogram(allData['TransverseMass'].values, bins=binning, density=True)
-    # binContent=binContent*width
-    # allData['TransverseMass'] = binContent[digitized]
 
-    allData_target = allData['TransverseMass'].values
-#    allData_target = tf.one_hot(digitized, PTBINS)
-#    temp = [np.argmax(y) for y in allData_target]
-    weighting = class_weight.compute_class_weight('balanced', np.unique(digitized), digitized)
+    allData_target = allData['target'].values
+    allData_adversarialTarget = allData['TransverseMass'].values
 
     weights = compute_sample_weight('balanced', digitized)
-#    print(digitized[:10])
-#    print(weights[:10])
+    allData["weights"] = weights
 
-    allData_input = allData['tauPt'].values #allData[columns]
-
-    plt.scatter(allData_input[:10000], allData_target[:10000])
-    plt.xlim(0.0, 200.0)
-    plt.ylim(0.0, 200.0)
-    plt.savefig("plots/inputsAndTargets.pdf")
-    plt.clf()
+    # plt.scatter(allData_input[:10000], allData_target[:10000])
+    # plt.xlim(0.0, 200.0)
+    # plt.ylim(0.0, 200.0)
+    # plt.savefig("plots/inputsAndTargets.pdf")
+    # plt.clf()
 
     scaler1 = MinMaxScaler()
     scaler2 = MinMaxScaler()
-    allData_input = scaler1.fit_transform(allData_input.reshape(-1, 1))
-    allData_target = scaler2.fit_transform(allData_target.reshape(-1, 1))
+    scaler3 = MinMaxScaler()
+    allData["logPt"] = scaler3.fit_transform(allData["logPt"].to_numpy().reshape(-1,1))
+#    allData[columns] = scaler1.fit_transform(allData[columns])
 
-#    allData = allData.sample(n=30*BATCHSIZE).reset_index(drop=True)
-#    train_data, test_data, train_target, test_target = train_test_split(allData[columns], allData['target'], test_size=0.1, random_state=42)
+#    allData_input = scaler1.fit_transform(allData_input.reshape(-1, 1))
+    allData["adversarialTarget"] = scaler2.fit_transform(allData_adversarialTarget.reshape(-1, 1))
 
+    print(allData.columns.values)
+    train_input, test_input, train_target, test_target = train_test_split(allData[columns+["logPt", "weights"]],
+                                                                          allData[["target", "adversarialTarget"]],
+                                                                          test_size=TESTSET_SIZE)
 
     # datasetTrain = tf.data.Dataset.from_tensor_slices((allData_input.values, allData_target.values.reshape((-1, 1))))
-    print(allData_input.shape, allData_target.shape, weights.shape)
-    datasetTrain = tf.data.Dataset.from_tensor_slices((allData_input, allData_target, weights))
+    # print(allData_input.shape, allData_target.shape, weights.shape)
+    # datasetTrain = tf.data.Dataset.from_tensor_slices((allData_input, allData_target, weights))
+    #
+    # datasetTest = datasetTrain.take(TESTSET_SIZE)
+    # datasetTest_target = allData_target[:TESTSET_SIZE]
+    # datasetTest_adversarialTarget = allData_adversarialTarget[TESTSET_SIZE]
+    # datasetTest_logPt = allData_logPt
+    # datasetTrain = datasetTrain.skip(TESTSET_SIZE)
+    #
+    # datasetTest = datasetTest.batch(BATCHSIZE)
+    # datasetTrain = datasetTrain.batch(BATCHSIZE)
 
-    datasetTest = datasetTrain.take(TESTSET_SIZE)
-    datasetTest_target = allData_target[:TESTSET_SIZE]
-    datasetTest_mass = allData_mass[TESTSET_SIZE]
-    datasetTrain = datasetTrain.skip(TESTSET_SIZE)
+    classifier = createClassifier()
+    classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                        loss="binary_crossentropy")
 
-    datasetTest = datasetTest.batch(BATCHSIZE)
-    datasetTrain = datasetTrain.batch(BATCHSIZE)
+    chainedModel = createChainedModel(classifier)
+    setTrainable(classifier, False)
+    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-5),
+                       loss=lambda y, model:-model.log_prob(y + 1e-6))
 
-    network = createAdversary()
+    def trainingLoop(train_input, train_target, epochs):
+        numberOfBatches = np.ceil(train_input.shape[0]/BATCHSIZE)
+        inputBatches = np.array_split(train_input[COLUMNS].to_numpy(), numberOfBatches)
+        targetBatches = np.array_split(train_target['target'].to_numpy(), numberOfBatches)
+        adversaryTargetBatches = np.array_split(train_target["adversarialTarget"].to_numpy(), numberOfBatches)
+        auxiliaryBatches = np.array_split(train_input['logPt'].to_numpy(), numberOfBatches)
+        weightBatches = np.array_split(train_input["weights"], numberOfBatches)
 
-    def customLoss(y_true, y_pred):
-#        return nsl.lib.jensen_shannon_divergence(y_true, y_pred, axis=1)
+        indices = range(len(inputBatches))
+        progbar = tf.keras.utils.Progbar(len(inputBatches), verbose=1)
+        for i in range(epochs):
+            if(i!=0):
+                print("\n\n")
+            epochClassifierLosses = np.empty(int(numberOfBatches), dtype=float)
+            epochAdversaryLosses = np.empty(int(numberOfBatches), dtype=float)
 
-        return nsl.lib.pairwise_distance_wrapper(
-            y_pred,
-            y_true,
-            distance_config=nsl.configs.DistanceConfig(
-                distance_type=nsl.configs.DistanceType.JENSEN_SHANNON_DIVERGENCE,
-                sum_over_axis=1
-            )
-        )
+            for index in indices:
+                classifierLoss = classifier.train_on_batch(inputBatches[index], targetBatches[index], sample_weight=weightBatches[index])
+                adversaryLoss = chainedModel.train_on_batch([inputBatches[index], auxiliaryBatches[index]], adversaryTargetBatches[index], sample_weight=weightBatches[index])
+                progbar.update(index, values=[("Classifier loss", classifierLoss), ("Adversary loss", adversaryLoss)])
+
+    trainingLoop(train_input, train_target, 10)
+
+    # classifier.fit(train_input[columns].to_numpy(),
+    #                train_target['target'].to_numpy(),
+    #                sample_weight=train_input['weights'].to_numpy(),
+    #                epochs=5,
+    #                batch_size=BATCHSIZE)
+    #
+    # chainedModel.fit([train_input[columns].to_numpy(), train_input["logPt"].to_numpy()],
+    #                  train_target['adversarialTarget'].to_numpy(),
+    #                  sample_weight=train_input['weights'].to_numpy(),
+    #                  epochs=5,
+    #                  batch_size=BATCHSIZE)
+
+#   classifier.predict(test_input[columns].to_numpy())
 
 
-    network.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-#    network.compile(optimizer=tf.optimizers.SGD(learning_rate=1e-3),
-                    loss=lambda y, model: -model.log_prob(y+1e-6))
-#                    loss=JensenShannonDivergence)
-#                    loss=customLoss)
-#                    loss="categorical_crossentropy")
+
+#     def customLoss(y_true, y_pred):
+# #        return nsl.lib.jensen_shannon_divergence(y_true, y_pred, axis=1)
+#
+#         return nsl.lib.pairwise_distance_wrapper(
+#             y_pred,
+#             y_true,
+#             distance_config=nsl.configs.DistanceConfig(
+#                 distance_type=nsl.configs.DistanceType.JENSEN_SHANNON_DIVERGENCE,
+#                 sum_over_axis=1
+#             )
+#         )
 
 
-    print(network.summary())
-    network.fit(datasetTrain, epochs=20)
+#     network.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+# #    network.compile(optimizer=tf.optimizers.SGD(learning_rate=1e-3),
+#                     loss=lambda y, model: -model.log_prob(y+1e-6))
+# #                    loss=JensenShannonDivergence)
+# #                    loss=customLoss)
+# #                    loss="categorical_crossentropy")
+#
+
+    # print(network.summary())
+    # network.fit(datasetTrain, epochs=20)
 #    network.fit(allData_input, allData_target, sample_weight=weights, epochs=5)
 #    network.fit(allData_input, allData_target, epochs=5)
 
@@ -159,10 +205,10 @@ def main():
     # GMM = createGMM(means[:20], means[20:40], means[40:])
     # sampled = GMM.sample(10000)
     #
-
-    sampleInput = np.random.uniform(low=0.0, high=199.0, size=TESTSET_SIZE).reshape(-1,1)
-    sampleInput_scaled = scaler1.transform(sampleInput)
-    sampled = scaler2.inverse_transform(network.predict(sampleInput_scaled))
+    #
+    # sampleInput = np.random.uniform(low=0.0, high=199.0, size=TESTSET_SIZE).reshape(-1,1)
+    # sampleInput_scaled = scaler1.transform(sampleInput)
+    # sampled = scaler2.inverse_transform(network.predict(sampleInput_scaled))
     # sampled = np.argmax(network.predict(allData_input[:10000]), axis=1)
     # sampled = np.sum(tf.one_hot(sampled, PTBINS), axis=0)
     #
@@ -179,10 +225,10 @@ def main():
 
     # print(sampled)
     #
-    plt.scatter(sampleInput, sampled)
-    plt.ylim(0.0, 200.0)
-    plt.xlim(0.0, 200.0)
-    plt.savefig("plots/sampledScatter.pdf")
+    # plt.scatter(sampleInput, sampled)
+    # plt.ylim(0.0, 200.0)
+    # plt.xlim(0.0, 200.0)
+    # plt.savefig("plots/sampledScatter.pdf")
 #     print(sampled.shape)
 #     print(sampled)
 #
