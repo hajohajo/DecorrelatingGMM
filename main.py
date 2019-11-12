@@ -1,7 +1,7 @@
 from generateDummyData import generateSamples
 from utilities import createDirectories
 from plotting import createDistributionComparison
-from neuralNetworks import train_test_Classifier, createClassifier, createAdversary, createAdversary, JensenShannonDivergence, createChainedModel
+from neuralNetworks import createChainedModel_v2, createChainedModel_v3, trainingLoop, train_test_Classifier, createClassifier, createAdversary, createAdversary, JensenShannonDivergence, createChainedModel
 import pandas as pd
 from tensorboard.plugins.hparams import api as hp
 from hyperOptimization import COLUMNS, HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, METRIC_ACCURACY, HP_ACTIVATION, HP_NUM_HIDDEN_LAYERS, BATCHSIZE, PTBINS, PTMIN, PTMAX
@@ -19,7 +19,8 @@ import tensorflow_probability as tfp
 import neural_structured_learning as nsl
 
 tf.random.set_seed(13)
-tf.compat.v1.disable_eager_execution()
+#tf.compat.v1.disable_eager_execution()
+
 
 def setTrainable(model, isTrainable):
     model.trainable = isTrainable
@@ -114,37 +115,133 @@ def main():
     # datasetTest = datasetTest.batch(BATCHSIZE)
     # datasetTrain = datasetTrain.batch(BATCHSIZE)
 
+#    trainingLoop(classifier, chained3, train_input, train_target, 10)
+
+    classifierWeights = train_input["weights"].to_numpy()
+    adversaryWeights = np.array(np.multiply(train_input["weights"], np.logical_not(train_target["target"])))
+
+
+    print(train_target["target"][:5])
+    print(adversaryWeights[:5])
+
+    # from tensorflow.keras.metrics import Metric
+    # tf.config.experimental_run_functions_eagerly(True)
+    # class JSDMetric(Metric):
+    #     classifierCut = 1.0
+    #     def __init(self, name="jensen_shannon_divergence", **kwargs):
+    #         super(JensenShannonDivergence, self).__init__(name=name, **kwargs)
+    #         self.classifierCut = 0.5
+    #         self.JSD = 1.0
+    #
+    #     def update_state(self, y_true, y_pred, sample_weight=None):
+    #         y_true = y_true.numpy()
+    #         y_pred = y_pred.numpy()
+    #         print(y_true)
+    #         print(y_pred)
+    #         backgroundPred = y_pred[(y_true==1)]
+    #         passed = backgroundPred(backgroundPred>self.classifierCut)
+    #         failed = backgroundPred(backgroundPred<=self.classifierCut)
+    #         binContentPassed, _ = np.histogram(passed, bins=binning, density=True)
+    #         binContentFailed, _ = np.histogram(failed, bins=binning, density=True)
+    #
+    #         k = tf.keras.losses.KLDivergence()
+    #         m = (binContentPassed + binContentFailed)/2.0
+    #         JSDScore = (k(binContentPassed, m) + k(binContentFailed, m))/2.0
+    #
+    #         self.JSD = JSDScore
+    #
+    #     def result(self):
+    #         return self.JSD
+    #
+    #     def reset_states(self):
+    #         self.JSD=1.0
+
+
+    class JSDMetric(tf.keras.callbacks.Callback):
+        def __init__(self, classifierCut, validation_data):
+            super().__init__()
+            self.JSDScores = []
+            self.validation_data = validation_data
+            self.classifierCut = classifierCut
+            self.epoch = 0
+
+        def getJSD(self):
+            input, target = self.validation_data
+            masses = input.TransverseMass.to_numpy().reshape(-1,1)
+            auxiliary = input["logPt"].to_numpy()
+            input = input[COLUMNS].to_numpy()
+            target = target.to_numpy()
+            input = input[(target == 0)]
+            auxiliary = auxiliary[(target == 0)]
+            masses = masses[(target == 0)]
+            predictions = self.model.predict([input, auxiliary])[0]
+            passArray = np.array(predictions > self.classifierCut, dtype=bool)
+            failArray = np.array(predictions <= self.classifierCut, dtype=bool)
+            passed = masses[passArray]
+            failed = masses[failArray]
+
+            binContentPassed, _ = np.histogram(passed, bins=PTBINS, density=True)
+            binContentFailed, _ = np.histogram(failed, bins=PTBINS, density=True)
+
+            k = tf.keras.losses.KLDivergence()
+            m = (binContentPassed + binContentFailed)/2.0
+
+            JSDScore = (k(binContentPassed, m) + k(binContentFailed, m))/2.0
+
+            return JSDScore.numpy()
+
+        def on_epoch_end(self, epoch, logs={}):
+            score = self.getJSD()
+            print("\t - JSD: %f" % (score))
+            self.JSDScores.append(score)
+            self.epoch += 1
+
+
+    jsdMetric = JSDMetric(classifierCut=0.5,
+                          validation_data=(train_input, train_target['target']))
+
     classifier = createClassifier()
     classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                         loss="binary_crossentropy")
 
-    chainedModel = createChainedModel(classifier)
-    setTrainable(classifier, False)
-    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-5),
-                       loss=lambda y, model:-model.log_prob(y + 1e-6))
+    adversary = createAdversary()
+    chained3 = createChainedModel_v3(classifier, adversary, 10.0)
 
-    def trainingLoop(train_input, train_target, epochs):
-        numberOfBatches = np.ceil(train_input.shape[0]/BATCHSIZE)
-        inputBatches = np.array_split(train_input[COLUMNS].to_numpy(), numberOfBatches)
-        targetBatches = np.array_split(train_target['target'].to_numpy(), numberOfBatches)
-        adversaryTargetBatches = np.array_split(train_target["adversarialTarget"].to_numpy(), numberOfBatches)
-        auxiliaryBatches = np.array_split(train_input['logPt'].to_numpy(), numberOfBatches)
-        weightBatches = np.array_split(train_input["weights"], numberOfBatches)
+    chained3.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                     loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-6)])
 
-        indices = range(len(inputBatches))
-        progbar = tf.keras.utils.Progbar(len(inputBatches), verbose=1)
-        for i in range(epochs):
-            if(i!=0):
-                print("\n\n")
-            epochClassifierLosses = np.empty(int(numberOfBatches), dtype=float)
-            epochAdversaryLosses = np.empty(int(numberOfBatches), dtype=float)
 
-            for index in indices:
-                classifierLoss = classifier.train_on_batch(inputBatches[index], targetBatches[index], sample_weight=weightBatches[index])
-                adversaryLoss = chainedModel.train_on_batch([inputBatches[index], auxiliaryBatches[index]], adversaryTargetBatches[index], sample_weight=weightBatches[index])
-                progbar.update(index, values=[("Classifier loss", classifierLoss), ("Adversary loss", adversaryLoss)])
 
-    trainingLoop(train_input, train_target, 10)
+    classifier.fit(train_input[COLUMNS].to_numpy(), train_target['target'].to_numpy(),
+                    epochs=5,
+                    batch_size=BATCHSIZE,
+                    sample_weight=train_input["weights"].to_numpy())
+    chained3.fit([train_input[COLUMNS].to_numpy(), train_input["logPt"].to_numpy()], [train_target['target'].to_numpy(), train_target['adversarialTarget'].to_numpy()],
+                 epochs=2,
+                 batch_size=BATCHSIZE,
+                 sample_weight=[classifierWeights, adversaryWeights],
+                 callbacks=[jsdMetric])
+
+
+    # predictions = classifier.predict(test_input[COLUMNS].to_numpy())
+    #
+    # passed = test_input[(predictions > 0.5)].TransverseMass
+    # failed = test_input[(predictions <= 0.5)].TransverseMass
+    #
+    # binContentPassed, _ = np.histogram(passed, bins=binning, density=True)
+    # binContentFailed, _ = np.histogram(failed, bins=binning, density=True)
+    #
+    # k = tf.keras.losses.KLDivergence()
+    # m = (binContentPassed + binContentFailed)/2.0
+    # JSDScore = (k(binContentPassed, m) + k(binContentFailed, m))/2.0
+
+    # chainedModel = createChainedModel(classifier)
+    # setTrainable(classifier, False)
+    # chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-5),
+    #                    loss=lambda y, model:-model.log_prob(y + 1e-6))
+
+
+#    trainingLoop(classifier, adversary, train_input, train_target, 10)
 
     # classifier.fit(train_input[columns].to_numpy(),
     #                train_target['target'].to_numpy(),

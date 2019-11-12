@@ -6,6 +6,31 @@ import math
 import numpy as np
 
 
+def trainingLoop(classifier, adversary, train_input, train_target, epochs):
+    numberOfBatches = np.ceil(train_input.shape[0] / BATCHSIZE)
+    inputBatches = np.array_split(train_input[COLUMNS].to_numpy(), numberOfBatches)
+    targetBatches = np.array_split(train_target['target'].to_numpy(), numberOfBatches)
+    adversaryTargetBatches = np.array_split(train_target["adversarialTarget"].to_numpy(), numberOfBatches)
+    auxiliaryBatches = np.array_split(train_input['logPt'].to_numpy(), numberOfBatches)
+    weightBatches = np.array_split(train_input["weights"], numberOfBatches)
+
+    indices = range(len(inputBatches))
+    progbar = tf.keras.utils.Progbar(len(inputBatches), verbose=1)
+    for i in range(epochs):
+        if (i != 0):
+            print("\n\n")
+        epochClassifierLosses = np.empty(int(numberOfBatches), dtype=float)
+        epochAdversaryLosses = np.empty(int(numberOfBatches), dtype=float)
+
+        for index in indices:
+            classifierLoss = classifier.train_on_batch(inputBatches[index], targetBatches[index],
+                                                       sample_weight=weightBatches[index])
+            adversaryLoss = adversary.train_on_batch([inputBatches[index], auxiliaryBatches[index]],
+                                                        [targetBatches[index], adversaryTargetBatches[index]],
+                                                        sample_weight=[weightBatches[index], weightBatches[index]])
+            progbar.update(index, values=[("Classifier loss", classifierLoss), ("Adversary loss", adversaryLoss[2])])
+
+
 def createClassifier():
     _activation = 'elu'
     _initialization = 'glorot_normal'
@@ -43,6 +68,36 @@ def createChainedModel(classifier):
     return keras.Model(inputs=[input, auxiliary],
                        outputs=out,
                        name="ChainedModel")
+
+@tf.custom_gradient
+def gradReverse(x): #, gamma=1.0):
+    y = tf.identity(x)
+    def custom_gradient(dy):
+#        return -gamma*dy
+        return dy
+    return y, custom_gradient
+
+class GradReverse(tf.keras.layers.Layer):
+    def __init__(self, gamma=1.0, **kwargs):
+        self.gamma=gamma
+        super(GradReverse, self).__init__(**kwargs)
+
+    def call(self, x):
+        return gradReverse(x) #, self.gamma)
+
+def createChainedModel_v2(classifier, adversary):
+    chainedModel = tf.keras.Model(inputs=[classifier.input, adversary.inputs[1]],
+                                  outputs=[classifier.output, adversary([classifier.output, adversary.inputs[1]])])
+    return chainedModel
+
+def createChainedModel_v3(classifier, adversary, gamma):
+
+    x = GradReverse(gamma)(classifier.output)
+
+    chainedModel = tf.keras.Model(inputs=[classifier.input, adversary.inputs[1]],
+                                  outputs=[classifier.output, adversary([x, adversary.inputs[1]])])
+
+    return chainedModel
 
 def createAdversary():
     event_shape = [1]
