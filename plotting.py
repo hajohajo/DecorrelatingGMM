@@ -58,3 +58,44 @@ def createDistributionComparison(signal, background, columns):
 
     plt.savefig("plots/DistributionComparison.pdf")
     plt.clf()
+
+
+#Assumes: Even bin widths
+from scipy.stats import binned_statistic
+def classifierVsX(classifier, inputData, targetData, variableName, variableData, postfix):
+    binning = xBinning[variableName]
+    width = binning[1]-binning[0]
+
+    bkg = inputData[(targetData['target']==0)]
+    sig = inputData[(targetData['target']==1)]
+    samples = [sig, bkg]
+    labels = ["signal", "background"]
+    ind = 0
+    variableData = [variableData[(targetData['target'] == 1)], variableData[(targetData['target'] == 0)]]
+    for data in samples:
+        variable = variableData[ind]
+        predictions = classifier.predict(data.to_numpy()).reshape(variable.shape)
+        binContent, _ = np.histogram(variable, bins=xBinning[variableName])
+        weightedBins, _ = np.histogram(variable, bins=xBinning[variableName], weights=predictions)
+        stdDev, _, _ = binned_statistic(variable, values=predictions, statistic='std', bins=xBinning[variableName])
+
+        weightedBins = weightedBins[(binContent!=0)]/binContent[(binContent!=0)]
+        cleanedBinning = binning[:-1][(binContent!=0)]
+        stdDev[(binContent==1)] = 1.0
+        stdDev = stdDev[(binContent!=0)]
+
+        plt.errorbar(cleanedBinning+width/2, weightedBins, yerr=stdDev, fmt='.', label=labels[ind])
+        ind += 1
+
+    plt.grid(zorder=0)
+    plt.xlabel(xLabel[variableName])
+    plt.ylabel("Mean MVA output and std. per bin")
+    plt.ylim(0.0, 1.0)
+    plt.xlim(0.0, 200.0)
+    plt.title("Classifier output and std w.r.t. " + xLabel[variableName])
+    plt.legend()
+
+    plt.savefig("plots/ClassifierVs" + variableName + postfix + ".pdf")
+    plt.clf()
+
+

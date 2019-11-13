@@ -1,7 +1,7 @@
 from generateDummyData import generateSamples
 from utilities import createDirectories
 from plotting import createDistributionComparison
-from neuralNetworks import createChainedModel_v2, createChainedModel_v3, trainingLoop, train_test_Classifier, createClassifier, createAdversary, createAdversary, JensenShannonDivergence, createChainedModel
+from neuralNetworks import createChainedModel_v3, trainingLoop, train_test_Classifier, createClassifier, createAdversary, createAdversary, JensenShannonDivergence
 import pandas as pd
 from tensorboard.plugins.hparams import api as hp
 from hyperOptimization import COLUMNS, HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, METRIC_ACCURACY, HP_ACTIVATION, HP_NUM_HIDDEN_LAYERS, BATCHSIZE, PTBINS, PTMIN, PTMAX
@@ -11,6 +11,8 @@ from sklearn.utils import class_weight, compute_sample_weight
 
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+
+from plotting import classifierVsX
 
 import numpy as np
 import tensorflow as tf
@@ -64,14 +66,14 @@ def main():
     columns = COLUMNS
 
     createDirectories()
-    signal = generateSamples(1000, isSignal=True)
-    background = generateSamples(50000, isSignal=False)
+    signal = generateSamples(100000, isSignal=True)
+    background = generateSamples(200000, isSignal=False)
 #    createDistributionComparison(signal, background, columns=columns)
     allData = signal.append(background, ignore_index=True)
-    print(allData.columns.values)
     allData=allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
+    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
     digitized = np.digitize(np.clip(allData['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False) - 1
@@ -87,20 +89,26 @@ def main():
     # plt.ylim(0.0, 200.0)
     # plt.savefig("plots/inputsAndTargets.pdf")
     # plt.clf()
-
-    scaler1 = MinMaxScaler()
     scaler2 = MinMaxScaler()
-    scaler3 = MinMaxScaler()
-    allData["logPt"] = scaler3.fit_transform(allData["logPt"].to_numpy().reshape(-1,1))
-#    allData[columns] = scaler1.fit_transform(allData[columns])
 
-#    allData_input = scaler1.fit_transform(allData_input.reshape(-1, 1))
-    allData["adversarialTarget"] = scaler2.fit_transform(allData_adversarialTarget.reshape(-1, 1))
-
+    allData["adversarialTarget"] = allData_adversarialTarget
+    allData["adversarialTarget"] = scaler2.fit_transform(allData["adversarialTarget"].to_numpy().reshape(-1, 1))
     print(allData.columns.values)
-    train_input, test_input, train_target, test_target = train_test_split(allData[columns+["logPt", "weights"]],
+    train_input, test_input, train_target, test_target = train_test_split(allData[columns+["logPt", "weights", "unscaledTransverseMass"]],
                                                                           allData[["target", "adversarialTarget"]],
                                                                           test_size=TESTSET_SIZE)
+
+    allData = pd.DataFrame(train_input, columns=COLUMNS+["logPt", "weights", "unscaledTransverseMass"])
+    allTarget = pd.DataFrame(train_target, columns=["target", "adversarialTarget"])
+    testData = pd.DataFrame(test_input, columns=COLUMNS+["logPt", "weights"])
+
+    scaler1 = MinMaxScaler()
+    scaler3 = MinMaxScaler()
+    allData["logPt"] = scaler3.fit_transform(allData["logPt"].to_numpy().reshape(-1, 1))
+    testData["logPt"] = scaler3.transform(testData["logPt"].to_numpy().reshape(-1, 1))
+    allData[columns] = scaler1.fit_transform(allData[columns])
+
+    #    allData_input = scaler1.fit_transform(allData_input.reshape(-1, 1))
 
     # datasetTrain = tf.data.Dataset.from_tensor_slices((allData_input.values, allData_target.values.reshape((-1, 1))))
     # print(allData_input.shape, allData_target.shape, weights.shape)
@@ -119,10 +127,8 @@ def main():
 
     classifierWeights = train_input["weights"].to_numpy()
     adversaryWeights = np.array(np.multiply(train_input["weights"], np.logical_not(train_target["target"])))
+#    adversaryWeights = np.array(np.multiply(np.ones(train_input.shape[0]), np.logical_not(train_target["target"])))
 
-
-    print(train_target["target"][:5])
-    print(adversaryWeights[:5])
 
     # from tensorflow.keras.metrics import Metric
     # tf.config.experimental_run_functions_eagerly(True)
@@ -167,7 +173,7 @@ def main():
 
         def getJSD(self):
             input, target = self.validation_data
-            masses = input.TransverseMass.to_numpy().reshape(-1,1)
+            masses = input.unscaledTransverseMass.to_numpy().reshape(-1,1)
             auxiliary = input["logPt"].to_numpy()
             input = input[COLUMNS].to_numpy()
             target = target.to_numpy()
@@ -191,14 +197,16 @@ def main():
             return JSDScore.numpy()
 
         def on_epoch_end(self, epoch, logs={}):
-            score = self.getJSD()
-            print("\t - JSD: %f" % (score))
-            self.JSDScores.append(score)
+            if(self.epoch%10==0):
+                score = self.getJSD()
+                print("\t - JSD: %f" % (score))
+                self.JSDScores.append(score)
+
             self.epoch += 1
 
 
     jsdMetric = JSDMetric(classifierCut=0.5,
-                          validation_data=(train_input, train_target['target']))
+                          validation_data=(allData.sample(frac=0.1), train_target['target'].sample(frac=0.1)))
 
     classifier = createClassifier()
     classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
@@ -208,19 +216,33 @@ def main():
     chained3 = createChainedModel_v3(classifier, adversary, 10.0)
 
     chained3.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                     loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-6)])
+                     loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
+                     weights=[1e-2, 1.0])
 
 
 
-    classifier.fit(train_input[COLUMNS].to_numpy(), train_target['target'].to_numpy(),
-                    epochs=5,
+    variableData = testData["TransverseMass"].copy()
+    test_input_ = testData.copy()
+    test_input_[COLUMNS] = scaler1.transform(testData[COLUMNS])
+
+#    classifier.fit(train_input[COLUMNS].to_numpy(), train_target['target'].to_numpy(),
+    classifier.fit(allData[COLUMNS].to_numpy(), allTarget['target'].to_numpy(),
+                    epochs=50,
                     batch_size=BATCHSIZE,
-                    sample_weight=train_input["weights"].to_numpy())
-    chained3.fit([train_input[COLUMNS].to_numpy(), train_input["logPt"].to_numpy()], [train_target['target'].to_numpy(), train_target['adversarialTarget'].to_numpy()],
-                 epochs=2,
+                    sample_weight=train_input["weights"].to_numpy(),
+                    validation_split=0.2)
+    classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "Before")
+
+#    chained3.fit([train_input[COLUMNS].to_numpy(), train_input["logPt"].to_numpy()], [train_target['target'].to_numpy(), train_target['adversarialTarget'].to_numpy()],
+    chained3.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
+                 epochs=50,
                  batch_size=BATCHSIZE,
                  sample_weight=[classifierWeights, adversaryWeights],
+#                 sample_weight=[np.zeros(adversaryWeights.shape), adversaryWeights],
                  callbacks=[jsdMetric])
+
+    classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "After")
+
 
 
     # predictions = classifier.predict(test_input[COLUMNS].to_numpy())

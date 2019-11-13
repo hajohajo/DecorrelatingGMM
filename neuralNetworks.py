@@ -32,14 +32,16 @@ def trainingLoop(classifier, adversary, train_input, train_target, epochs):
 
 
 def createClassifier():
-    _activation = 'elu'
+    _activation = 'relu'
     _initialization = 'glorot_normal'
-    _nodes = 64
+    _nodes = 256
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(_inputs)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
+    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
+    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
+    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
     _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, name="outputClassifier")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
@@ -51,30 +53,11 @@ def JensenShannonDivergence(y_true, y_pred):
     m = (y_true + y_pred)/2.0
     return tf.reduce_sum((k(y_true, m) + k(y_pred, m))/2.0, axis=0)
 
-def createChainedModel(classifier):
-    event_shape = [1]
-    numberOfGaussians = 20
-
-    params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
-                                                              component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
-
-    input = classifier.input
-    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-    x = keras.layers.Concatenate()([classifier.output, auxiliary])
-    x = keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
-    x = keras.layers.Dense(params_size, activation=None)(x)
-    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape)(x)
-
-    return keras.Model(inputs=[input, auxiliary],
-                       outputs=out,
-                       name="ChainedModel")
-
 @tf.custom_gradient
 def gradReverse(x): #, gamma=1.0):
     y = tf.identity(x)
     def custom_gradient(dy):
-#        return -gamma*dy
-        return dy
+        return -10*dy
     return y, custom_gradient
 
 class GradReverse(tf.keras.layers.Layer):
@@ -85,15 +68,9 @@ class GradReverse(tf.keras.layers.Layer):
     def call(self, x):
         return gradReverse(x) #, self.gamma)
 
-def createChainedModel_v2(classifier, adversary):
-    chainedModel = tf.keras.Model(inputs=[classifier.input, adversary.inputs[1]],
-                                  outputs=[classifier.output, adversary([classifier.output, adversary.inputs[1]])])
-    return chainedModel
-
 def createChainedModel_v3(classifier, adversary, gamma):
 
     x = GradReverse(gamma)(classifier.output)
-
     chainedModel = tf.keras.Model(inputs=[classifier.input, adversary.inputs[1]],
                                   outputs=[classifier.output, adversary([x, adversary.inputs[1]])])
 
@@ -101,7 +78,7 @@ def createChainedModel_v3(classifier, adversary, gamma):
 
 def createAdversary():
     event_shape = [1]
-    numberOfGaussians = 20
+    numberOfGaussians = 5
 
 
     params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
@@ -110,7 +87,7 @@ def createAdversary():
     inputs = keras.Input(shape=(1), name="inputAdversary")
     auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
     x = keras.layers.Concatenate()([inputs, auxiliary])
-    x = keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
+    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
     x = keras.layers.Dense(params_size, activation=None)(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape)(x)
 

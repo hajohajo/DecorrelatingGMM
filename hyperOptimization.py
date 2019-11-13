@@ -7,7 +7,7 @@ HP_DROPOUT = hp.HParam("dropout", hp.RealInterval(0.1, 0.4)) # 0.3))
 HP_OPTIMIZER = hp.HParam("opimizer", hp.Discrete(['adam'])) #, 'sgd']))
 HP_ACTIVATION = hp.HParam("activation", hp.Discrete(['elu', 'selu']))#['relu', 'elu', 'selu']))
 METRIC_ACCURACY = "accuracy"
-BATCHSIZE = 32
+BATCHSIZE = 1024
 
 PTBINS = 30
 PTMIN = 0.0
