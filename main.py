@@ -11,11 +11,14 @@ from sklearn.utils import class_weight, compute_sample_weight
 
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-
+import sys
 from plotting import classifierVsX
 
 import numpy as np
 import tensorflow as tf
+import glob
+
+from root_pandas import read_root
 
 import tensorflow_probability as tfp
 import neural_structured_learning as nsl
@@ -65,23 +68,49 @@ def main():
 #    columns = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
     columns = COLUMNS
 
+    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+    signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
+    # signalFilePaths =glob.glob(baseUrl+"ChargedHiggs_HplusTB_HplusToTauNu_M_180_TrainingEvents.root")
+    backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
+
+    signal = read_root(signalFilePaths, columns=columns)
+    background = read_root(backgroundFilePaths, columns=columns)
+    signal['target'] = 1
+    background['target'] = 0
+
+    print(signal.shape)
+    print(background.shape)
+
+    events = min(signal.shape[0], background.shape[0])
+
+    # signal=signal[(signal.TransverseMass<250)]
+    signal = signal.sample(n=events)
+    background = background.sample(n=events)
+
+
     createDirectories()
-    signal = generateSamples(100000, isSignal=True)
-    background = generateSamples(200000, isSignal=False)
-#    createDistributionComparison(signal, background, columns=columns)
+    # signal = generateSamples(100000, isSignal=True)
+    # background = generateSamples(100000, isSignal=False)
+    # createDistributionComparison(signal, background, columns=columns)
+    #
+    # sys.exit(1)
+
     allData = signal.append(background, ignore_index=True)
-    allData=allData[columns+["target"]]
+    allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
     allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 
+    weights = np.ones(allData.shape[0])
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
     digitized = np.digitize(np.clip(allData['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False) - 1
+#    binContent = np.histogram(allData[(allData.target==0)])
+
 
     allData_target = allData['target'].values
     allData_adversarialTarget = allData['TransverseMass'].values
 
-    weights = compute_sample_weight('balanced', digitized)
+    weights[allData.target==0] = compute_sample_weight('balanced', digitized[allData.target==0])
     allData["weights"] = weights
 
     # plt.scatter(allData_input[:10000], allData_target[:10000])
@@ -93,7 +122,6 @@ def main():
 
     allData["adversarialTarget"] = allData_adversarialTarget
     allData["adversarialTarget"] = scaler2.fit_transform(allData["adversarialTarget"].to_numpy().reshape(-1, 1))
-    print(allData.columns.values)
     train_input, test_input, train_target, test_target = train_test_split(allData[columns+["logPt", "weights", "unscaledTransverseMass"]],
                                                                           allData[["target", "adversarialTarget"]],
                                                                           test_size=TESTSET_SIZE)
@@ -129,6 +157,8 @@ def main():
     adversaryWeights = np.array(np.multiply(train_input["weights"], np.logical_not(train_target["target"])))
 #    adversaryWeights = np.array(np.multiply(np.ones(train_input.shape[0]), np.logical_not(train_target["target"])))
 
+    print(classifierWeights)
+    print(adversaryWeights)
 
     # from tensorflow.keras.metrics import Metric
     # tf.config.experimental_run_functions_eagerly(True)
@@ -217,31 +247,49 @@ def main():
 
     chained3.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                      loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                     weights=[1e-2, 1.0])
+                     weights=[1e2, 1.0]) #5e-2
+
+    # setTrainable(classifier, False)
+    # chainedFreeze = createChainedModel_v3(classifier, adversary, 10.0)
+    # chainedFreeze.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+    #                  loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
+    #                  weights=[2.0, 1.0])
 
 
 
-    variableData = testData["TransverseMass"].copy()
-    test_input_ = testData.copy()
-    test_input_[COLUMNS] = scaler1.transform(testData[COLUMNS])
 
-#    classifier.fit(train_input[COLUMNS].to_numpy(), train_target['target'].to_numpy(),
+
+    # variableData = testData["TransverseMass"].copy()
+    variableData = allData["unscaledTransverseMass"].copy()
+
+    # test_input_ = testData.copy()
+    # test_input_[COLUMNS] = scaler1.transform(testData[COLUMNS])
+
     classifier.fit(allData[COLUMNS].to_numpy(), allTarget['target'].to_numpy(),
                     epochs=50,
                     batch_size=BATCHSIZE,
-                    sample_weight=train_input["weights"].to_numpy(),
-                    validation_split=0.2)
-    classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "Before")
+                    # sample_weight=classifierWeights,
+                    validation_split=0.05)
+# #    classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "Before")
+    classifierVsX(classifier, allData[COLUMNS], allTarget, "TransverseMass", variableData, "Before")
 
-#    chained3.fit([train_input[COLUMNS].to_numpy(), train_input["logPt"].to_numpy()], [train_target['target'].to_numpy(), train_target['adversarialTarget'].to_numpy()],
+    # chainedFreeze.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
+    #              epochs=10,
+    #              batch_size=BATCHSIZE,
+    #              sample_weight=[classifierWeights, adversaryWeights],
+    #              callbacks=[jsdMetric])
+    #
+    # classifierVsX(classifier, allData[COLUMNS], allTarget, "TransverseMass", variableData, "Middle")
+
+
     chained3.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
-                 epochs=50,
+                 epochs=10,
                  batch_size=BATCHSIZE,
                  sample_weight=[classifierWeights, adversaryWeights],
-#                 sample_weight=[np.zeros(adversaryWeights.shape), adversaryWeights],
                  callbacks=[jsdMetric])
 
-    classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "After")
+    # classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "After")
+    classifierVsX(classifier, train_input[COLUMNS], train_target, "TransverseMass", variableData, "After")
 
 
 

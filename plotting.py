@@ -1,6 +1,11 @@
 import numpy as np
 from math import ceil, floor
+import seaborn as sns
 import matplotlib.pyplot as plt
+from hyperOptimization import PTBINS, PTMIN, PTMAX
+
+sns.set()
+sns.set_style("whitegrid")
 
 xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "MET" : np.linspace(0.0, 500.0, 100),
@@ -9,15 +14,15 @@ xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "deltaPhiTauMet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiTauBjet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiBjetMet" : np.linspace(0.0, np.pi, 30),
-            "TransverseMass" : np.linspace(0.0, 600.0, 100)}
+            "TransverseMass" : np.linspace(PTMIN, PTMAX, PTBINS)} #np.linspace(0.0, 600.0, 100)}
 
-xLabel = {"tauPt" : r"Tau p$\_T$",
+xLabel = {"tauPt" : r"Tau p$_T$",
             "MET" : r"E$_{T, miss}$",
             "bjetPt" : r"B-jet p$_T$",
             "ldgTrkPtFrac" : r"Leading charged track p$_T$",
             "deltaPhiTauMet" : r"$\Delta\Phi_{\tau, MET}$",
-            "deltaPhiTauBjet" : r"\Delta\Phi_{\tau, MET}$",
-            "deltaPhiBjetMet" : r"\Delta\Phi_{b jet, MET}$",
+            "deltaPhiTauBjet" : r"$\Delta\Phi_{\tau, MET}$",
+            "deltaPhiBjetMet" : r"$\Delta\Phi_{b jet, MET}$",
             "TransverseMass" : r"m$_T$"}
 
 titles = {"tauPt" : "Tau transverse momentum",
@@ -33,7 +38,7 @@ def createDistributionComparison(signal, background, columns):
     subplotColumns = 2
     subplotRows = ceil(1.0*len(columns)/subplotColumns)
     print("Subplot columns: %d, subplot rows: %d" % (subplotColumns, subplotRows))
-    fig, axes = plt.subplots(subplotRows, subplotColumns, figsize=(15,20))
+    fig, axes = plt.subplots(subplotRows, subplotColumns, figsize=(15,30))
     ind = 0
     for column in columns:
         thisYIndex = ind % subplotColumns
@@ -44,16 +49,18 @@ def createDistributionComparison(signal, background, columns):
         else:
             thisAxes = axes[thisXIndex]
 
-        thisAxes.hist(signal[column], bins=xBinning[column], color='blue',
+        thisAxes.hist(signal[column], bins=xBinning[column], color=sns.xkcd_rgb['teal'],
                                           alpha=0.7, edgecolor='black', linewidth=1.0,
                                           label="Signal", density=True)
 
-        thisAxes.hist(background[column], bins=xBinning[column], color='green',
+        thisAxes.hist(background[column], bins=xBinning[column], color=sns.xkcd_rgb['crimson'],
                                           alpha=0.7, edgecolor='black', linewidth=1.0,
                                           label="Background", density=True)
         thisAxes.set_xlabel(xLabel[column])
         thisAxes.set_title(titles[column])
         thisAxes.legend()
+        thisAxes.set_xlim(xBinning[column][0], xBinning[column][-1])
+        thisAxes.set_ylabel(ylabel="Fraction of events")
         ind += 1
 
     plt.savefig("plots/DistributionComparison.pdf")
@@ -70,6 +77,7 @@ def classifierVsX(classifier, inputData, targetData, variableName, variableData,
     sig = inputData[(targetData['target']==1)]
     samples = [sig, bkg]
     labels = ["signal", "background"]
+    colors = [sns.xkcd_rgb["teal"], sns.xkcd_rgb["crimson"]]
     ind = 0
     variableData = [variableData[(targetData['target'] == 1)], variableData[(targetData['target'] == 0)]]
     for data in samples:
@@ -84,14 +92,21 @@ def classifierVsX(classifier, inputData, targetData, variableName, variableData,
         stdDev[(binContent==1)] = 1.0
         stdDev = stdDev[(binContent!=0)]
 
-        plt.errorbar(cleanedBinning+width/2, weightedBins, yerr=stdDev, fmt='.', label=labels[ind])
+        plt.scatter(cleanedBinning+width/2, weightedBins, marker='.', label=labels[ind], color=colors[ind], alpha=0.7, linewidths=1.0, edgecolors='k')
+        extended = np.append(np.insert(weightedBins, 0, weightedBins[0]-(weightedBins[1]-weightedBins[0])/2.0), weightedBins[-1]+(weightedBins[-1]-weightedBins[-2])/2.0)
+        up = extended+np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
+        down = extended-np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
+        extendedBinning = np.append(np.insert(cleanedBinning+width/2, 0, cleanedBinning[0]), cleanedBinning[-1]+width)
+        plt.plot(extendedBinning, up, color=colors[ind], alpha=0.9)
+        plt.plot(extendedBinning, down, color=colors[ind], alpha=0.9)
+        plt.fill_between(extendedBinning, up, down, label="$\pm 1\sigma$", alpha=0.6, color=colors[ind])
         ind += 1
 
     plt.grid(zorder=0)
     plt.xlabel(xLabel[variableName])
-    plt.ylabel("Mean MVA output and std. per bin")
+    plt.ylabel("Mean MVA output per bin")
     plt.ylim(0.0, 1.0)
-    plt.xlim(0.0, 200.0)
+    plt.xlim(PTMIN, PTMAX)
     plt.title("Classifier output and std w.r.t. " + xLabel[variableName])
     plt.legend()
 

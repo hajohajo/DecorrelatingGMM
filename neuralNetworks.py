@@ -31,17 +31,25 @@ def trainingLoop(classifier, adversary, train_input, train_target, epochs):
             progbar.update(index, values=[("Classifier loss", classifierLoss), ("Adversary loss", adversaryLoss[2])])
 
 
+from tensorflow.keras.activations import sigmoid
+def swish(x, beta = 1):
+    return (x * sigmoid(beta * x))
+
+beta = tf.Variable(initial_value=1.0, trainable=True, name='swish_beta')
+def altSwish(x):
+    return x * tf.nn.sigmoid(beta*x)
+
 def createClassifier():
-    _activation = 'relu'
+    _activation = altSwish #swish #'relu'
     _initialization = 'glorot_normal'
-    _nodes = 256
+    _nodes = 16
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(_inputs)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
-    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
-    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
-    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
     _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, name="outputClassifier")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
@@ -78,7 +86,7 @@ def createChainedModel_v3(classifier, adversary, gamma):
 
 def createAdversary():
     event_shape = [1]
-    numberOfGaussians = 5
+    numberOfGaussians = 20
 
 
     params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
@@ -86,8 +94,8 @@ def createAdversary():
 
     inputs = keras.Input(shape=(1), name="inputAdversary")
     auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-    x = keras.layers.Concatenate()([inputs, auxiliary])
-    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
+#    x = keras.layers.Concatenate()([inputs, auxiliary])
+    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(inputs)#(x)
     x = keras.layers.Dense(params_size, activation=None)(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape)(x)
 
