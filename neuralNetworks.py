@@ -1,4 +1,5 @@
 from tensorflow import keras
+from tensorflow.keras.activations import sigmoid
 import tensorflow_probability as tfp
 import tensorflow as tf
 from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS, COLUMNS
@@ -31,7 +32,6 @@ def trainingLoop(classifier, adversary, train_input, train_target, epochs):
             progbar.update(index, values=[("Classifier loss", classifierLoss), ("Adversary loss", adversaryLoss[2])])
 
 
-from tensorflow.keras.activations import sigmoid
 def swish(x, beta = 1):
     return (x * sigmoid(beta * x))
 
@@ -151,3 +151,9 @@ def train_test_Classifier(hparams, train_data, test_data):
     model.fit(train_data, epochs=5)
     _, accuracy = model.evaluate(test_data)
     return accuracy
+
+def setTrainable(model, isTrainable):
+    model.trainable = isTrainable
+    for layer in model.layers:
+        layer.trainable = isTrainable
+
