@@ -1,7 +1,7 @@
 from utilities import createDirectories
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, StandardScalerLayer
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
 from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE
 
@@ -11,6 +11,8 @@ from plotting import classifierVsX
 import numpy as np
 import tensorflow as tf
 import glob
+
+import sys
 
 from root_pandas import read_root
 
@@ -31,14 +33,10 @@ def main():
     signal['target'] = 1
     background['target'] = 0
 
-    print(signal.shape)
-    print(background.shape)
-
     events = min(signal.shape[0], background.shape[0])
 
     signal = signal.sample(n=events)
     background = background.sample(n=events)
-
 
     createDirectories()
 
@@ -47,6 +45,32 @@ def main():
     allData = allData.sample(frac=1.0).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
     allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
+
+    scaler = StandardScaler().fit(allData[COLUMNS])
+
+    scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
+
+    # sanityCheck = allData[COLUMNS][:1]
+    # sanityCheck = np.multiply(np.subtract(sanityCheck, means), 1.0/scale)
+    # sanityCheck2 = scaler.transform(allData[COLUMNS][:1])
+
+    inp = tf.keras.layers.Input(8)
+    out = StandardScalerLayer(means, scale)(inp)
+    model = tf.keras.Model(inp, out)
+    model.compile(loss='mse')
+
+    scaledData = model.predict(allData[COLUMNS])
+
+    Data = tf.data.Dataset.from_tensor_slices((allData[COLUMNS].values, allData['target'].values))
+    Data = Data.batch(BATCHSIZE, drop_remainder=True)
+
+
+    # classifier = createClassifier();
+    # classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+    #                     loss="binary_crossentropy")
+    # classifier.fit(Data, epochs=15)
+
+    sys.exit(1)
 
     weights = np.ones(allData.shape[0])
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
@@ -78,46 +102,6 @@ def main():
     classifierWeights = train_input["weights"].to_numpy()
     adversaryWeights = np.array(np.multiply(train_input["weights"], np.logical_not(train_target["target"])))
 
-    class JSDMetric(tf.keras.callbacks.Callback):
-        def __init__(self, classifierCut, validation_data):
-            super().__init__()
-            self.JSDScores = []
-            self.validation_data = validation_data
-            self.classifierCut = classifierCut
-            self.epoch = 0
-
-        def getJSD(self):
-            input, target = self.validation_data
-            masses = input.unscaledTransverseMass.to_numpy().reshape(-1,1)
-            auxiliary = input["logPt"].to_numpy()
-            input = input[COLUMNS].to_numpy()
-            target = target.to_numpy()
-            input = input[(target == 0)]
-            auxiliary = auxiliary[(target == 0)]
-            masses = masses[(target == 0)]
-            predictions = self.model.predict([input, auxiliary])[0]
-            passArray = np.array(predictions > self.classifierCut, dtype=bool)
-            failArray = np.array(predictions <= self.classifierCut, dtype=bool)
-            passed = masses[passArray]
-            failed = masses[failArray]
-
-            binContentPassed, _ = np.histogram(passed, bins=PTBINS, density=True)
-            binContentFailed, _ = np.histogram(failed, bins=PTBINS, density=True)
-
-            k = tf.keras.losses.KLDivergence()
-            m = (binContentPassed + binContentFailed)/2.0
-
-            JSDScore = (k(binContentPassed, m) + k(binContentFailed, m))/2.0
-
-            return JSDScore.numpy()
-
-        def on_epoch_end(self, epoch, logs={}):
-            if(self.epoch%10==0):
-                score = self.getJSD()
-                print("\t - JSD: %f" % (score))
-                self.JSDScores.append(score)
-
-            self.epoch += 1
 
 
     jsdMetric = JSDMetric(classifierCut=0.5,

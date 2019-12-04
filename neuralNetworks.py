@@ -6,6 +6,22 @@ from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HID
 import math
 import numpy as np
 
+#Performs the work of the sklearn StandardScaler. Requires the feature means and scales as input, but
+#after that the values are store here for the easy deployment of the model.
+#Is meant to be deployed right after the Input layer
+class StandardScalerLayer(tf.keras.layers.Layer):
+    def __init__(self, means, scale, **kwargs):
+        self.means = tf.convert_to_tensor(np.reshape(means, (1, means.shape[-1])), dtype='float32')
+        self.invertedScale = tf.convert_to_tensor(1.0 / np.reshape(scale, (1, scale.shape[-1])), dtype='float32')
+        super(StandardScalerLayer, self).__init__(**kwargs)
+
+
+    def build(self, input_shape):
+        super(StandardScalerLayer, self).build(input_shape)
+
+    def call(self, input):
+        return tf.math.multiply((input-self.means), self.invertedScale)
+
 
 def trainingLoop(classifier, adversary, train_input, train_target, epochs):
     numberOfBatches = np.ceil(train_input.shape[0] / BATCHSIZE)
@@ -156,4 +172,45 @@ def setTrainable(model, isTrainable):
     model.trainable = isTrainable
     for layer in model.layers:
         layer.trainable = isTrainable
+
+class JSDMetric(tf.keras.callbacks.Callback):
+    def __init__(self, classifierCut, validation_data):
+        super().__init__()
+        self.JSDScores = []
+        self.validation_data = validation_data
+        self.classifierCut = classifierCut
+        self.epoch = 0
+
+    def getJSD(self):
+        input, target = self.validation_data
+        masses = input.unscaledTransverseMass.to_numpy().reshape(-1,1)
+        auxiliary = input["logPt"].to_numpy()
+        input = input[COLUMNS].to_numpy()
+        target = target.to_numpy()
+        input = input[(target == 0)]
+        auxiliary = auxiliary[(target == 0)]
+        masses = masses[(target == 0)]
+        predictions = self.model.predict([input, auxiliary])[0]
+        passArray = np.array(predictions > self.classifierCut, dtype=bool)
+        failArray = np.array(predictions <= self.classifierCut, dtype=bool)
+        passed = masses[passArray]
+        failed = masses[failArray]
+
+        binContentPassed, _ = np.histogram(passed, bins=PTBINS, density=True)
+        binContentFailed, _ = np.histogram(failed, bins=PTBINS, density=True)
+
+        k = tf.keras.losses.KLDivergence()
+        m = (binContentPassed + binContentFailed)/2.0
+
+        JSDScore = (k(binContentPassed, m) + k(binContentFailed, m))/2.0
+
+        return JSDScore.numpy()
+
+    def on_epoch_end(self, epoch, logs={}):
+        if(self.epoch%10==0):
+            score = self.getJSD()
+            print("\t - JSD: %f" % (score))
+            self.JSDScores.append(score)
+
+        self.epoch += 1
 
