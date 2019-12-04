@@ -46,11 +46,19 @@ def createClassifier():
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(_inputs)
+    x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
+    x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
-    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, name="outputClassifier")(x)
+    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+
+    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, name="out_classifier")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
 
@@ -86,7 +94,7 @@ def createChainedModel_v3(classifier, adversary, gamma):
 
 def createAdversary():
     event_shape = [1]
-    numberOfGaussians = 20
+    numberOfGaussians = 10
 
 
     params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
@@ -94,10 +102,10 @@ def createAdversary():
 
     inputs = keras.Input(shape=(1), name="inputAdversary")
     auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-#    x = keras.layers.Concatenate()([inputs, auxiliary])
-    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(inputs)#(x)
+    x = keras.layers.Concatenate()([inputs, auxiliary])
+    x = keras.layers.Dense(32, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
     x = keras.layers.Dense(params_size, activation=None)(x)
-    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape)(x)
+    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
     model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
 

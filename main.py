@@ -99,6 +99,7 @@ def main():
     allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
+    # allData["logPt"] = allData["tauPt"].copy().values
     allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 
     weights = np.ones(allData.shape[0])
@@ -108,7 +109,7 @@ def main():
 
 
     allData_target = allData['target'].values
-    allData_adversarialTarget = allData['TransverseMass'].values
+    allData_adversarialTarget = allData['unscaledTransverseMass'].values
 
     weights[allData.target==0] = compute_sample_weight('balanced', digitized[allData.target==0])
     allData["weights"] = weights
@@ -134,8 +135,7 @@ def main():
     scaler3 = MinMaxScaler()
     allData["logPt"] = scaler3.fit_transform(allData["logPt"].to_numpy().reshape(-1, 1))
     testData["logPt"] = scaler3.transform(testData["logPt"].to_numpy().reshape(-1, 1))
-    allData[columns] = scaler1.fit_transform(allData[columns])
-
+    # allData[columns] = scaler1.fit_transform(allData[columns])
     #    allData_input = scaler1.fit_transform(allData_input.reshape(-1, 1))
 
     # datasetTrain = tf.data.Dataset.from_tensor_slices((allData_input.values, allData_target.values.reshape((-1, 1))))
@@ -247,13 +247,13 @@ def main():
 
     chained3.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                      loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                     weights=[1e2, 1.0]) #5e-2
+                     weights=[1.0, 1.0])
 
-    # setTrainable(classifier, False)
-    # chainedFreeze = createChainedModel_v3(classifier, adversary, 10.0)
-    # chainedFreeze.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-    #                  loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-    #                  weights=[2.0, 1.0])
+    setTrainable(classifier, False)
+    chainedFreeze = createChainedModel_v3(classifier, adversary, 10.0)
+    chainedFreeze.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                     loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
+                     weights=[1.0, 1.0])
 
 
 
@@ -266,26 +266,29 @@ def main():
     # test_input_[COLUMNS] = scaler1.transform(testData[COLUMNS])
 
     classifier.fit(allData[COLUMNS].to_numpy(), allTarget['target'].to_numpy(),
-                    epochs=50,
+                    epochs=100,
                     batch_size=BATCHSIZE,
-                    # sample_weight=classifierWeights,
+                    sample_weight=classifierWeights,
                     validation_split=0.05)
 # #    classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "Before")
     classifierVsX(classifier, allData[COLUMNS], allTarget, "TransverseMass", variableData, "Before")
 
-    # chainedFreeze.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
-    #              epochs=10,
-    #              batch_size=BATCHSIZE,
-    #              sample_weight=[classifierWeights, adversaryWeights],
-    #              callbacks=[jsdMetric])
-    #
+    chainedFreeze.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
+                 epochs=100,
+                 batch_size=BATCHSIZE,
+                 sample_weight={"out_classifier": classifierWeights, "Adversary": adversaryWeights},
+
+                 # sample_weight=[classifierWeights, adversaryWeights],
+                 callbacks=[jsdMetric])
+
     # classifierVsX(classifier, allData[COLUMNS], allTarget, "TransverseMass", variableData, "Middle")
 
 
     chained3.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
-                 epochs=10,
+                 epochs=300,
                  batch_size=BATCHSIZE,
-                 sample_weight=[classifierWeights, adversaryWeights],
+                 # sample_weight=[classifierWeights, adversaryWeights],
+                 sample_weight={"out_classifier":classifierWeights, "Adversary":adversaryWeights},
                  callbacks=[jsdMetric])
 
     # classifierVsX(classifier, test_input_[COLUMNS], test_target, "TransverseMass", variableData, "After")
