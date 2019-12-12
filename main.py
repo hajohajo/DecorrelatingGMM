@@ -73,38 +73,32 @@ def main():
     classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                         loss="binary_crossentropy")
 
-    class GradientCallBack(tf.keras.callbacks.Callback):
-        def on_epoch_end(self, epoch, logs=None):
-            weights = [w for w in self.model.trainable_weights if 'dense' in w.name and 'bias' in w.name]
-            loss = self.model.total_loss
-            optimizer = self.model.optimizer
-            gradients = optimizer.get_gradients(loss, weights)
-            for t in gradients:
-                tf.summary.histogram(t.name, data=t.eval(), step=epoch)
-
     class GradientTapeCallBack(tf.keras.callbacks.Callback):
         def __init__(self, train_data):
-            self.train_data= train_data
+            self.train_data = train_data
             self.frame = tf.convert_to_tensor(trainDataFrame[COLUMNS][TESTSET_SIZE:].values)
             self.normalizingConst = trainDataFrame.shape[0]-TESTSET_SIZE
+            self.file_writer = tf.summary.create_file_writer("logs/train")
+            self.file_writer.set_as_default()
 
         def on_epoch_end(self, epoch, logs=None):
             with tf.GradientTape(persistent=True) as tape:
                 values = self.model(self.frame)
 
-            for l in [layer for layer in self.model.layers if 'dense' in layer.name]:
+            for l in [layer for layer in self.model.layers if 'classifierDense' in layer.name]:
                 with tf.name_scope(l.name):
                     grads = tape.gradient(values, l.trainable_variables)
-                    tf.summary.histogram(l.name+"/kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
-                    tf.summary.histogram(l.name+"/bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
+                    tf.summary.histogram("kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
+                    tf.summary.histogram("bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
 
-    file_writer = tf.summary.create_file_writer("logs")
-    file_writer.set_as_default()
+            self.file_writer.flush()
+
 
     # logdir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
     tensorboardCallback = tf.keras.callbacks.TensorBoard(histogram_freq=1,
-                                                         update_freq='epoch')
+                                                         update_freq='epoch',
+                                                         profile_batch=0)
     gradientTapeCallback = GradientTapeCallBack(trainDataset)
 
     classifier.fit(trainDataset,

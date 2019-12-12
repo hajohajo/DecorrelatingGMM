@@ -69,17 +69,17 @@ def createClassifier(means, scale):
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = StandardScalerLayer(means, scale)(_inputs)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense1")(x)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense1")(x)
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense2")(x)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense2")(x)
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense3")(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense3")(x)  #
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense4")(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense4")(x)  #
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense5")(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense5")(x)  #
     x = keras.layers.BatchNormalization()(x)
-    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense_output")(x)
+    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense_output")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
 
