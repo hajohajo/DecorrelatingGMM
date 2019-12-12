@@ -2,7 +2,7 @@ import os
 import shutil
 
 def createDirectories():
-    directories = ["plots"]
+    directories = ["plots", "logs"]
 
     for directory in directories:
         if os.path.exists(directory):

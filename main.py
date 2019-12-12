@@ -10,15 +10,18 @@ from plotting import classifierVsX
 
 import numpy as np
 import tensorflow as tf
+
 import glob
 
 import sys
+from datetime import datetime
 
 from root_pandas import read_root
 
 tf.random.set_seed(13)
 #tf.compat.v1.disable_eager_execution()
 
+print(tf.executing_eagerly())
 
 def main():
     TESTSET_SIZE = 10000
@@ -44,31 +47,71 @@ def main():
     allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
-    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
+#    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 
-    scaler = StandardScaler().fit(allData[COLUMNS])
+    trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.1)
 
+    scaler = StandardScaler().fit(trainDataFrame[COLUMNS])
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
 
-    # sanityCheck = allData[COLUMNS][:1]
-    # sanityCheck = np.multiply(np.subtract(sanityCheck, means), 1.0/scale)
-    # sanityCheck2 = scaler.transform(allData[COLUMNS][:1])
+    sampleWeights_classifier = np.ones(trainDataFrame.shape[0])
+    binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
+    digitized = np.digitize(np.clip(trainDataFrame['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False)
+    sampleWeights_classifier[trainDataFrame.target == 0] = compute_sample_weight('balanced', digitized[trainDataFrame.target == 0])
 
-    inp = tf.keras.layers.Input(8)
-    out = StandardScalerLayer(means, scale)(inp)
-    model = tf.keras.Model(inp, out)
-    model.compile(loss='mse')
+    trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values, sampleWeights_classifier))
+    validationDataset = trainDataset.take(TESTSET_SIZE)
+    trainDataset = trainDataset.skip(TESTSET_SIZE)
 
-    scaledData = model.predict(allData[COLUMNS])
+    trainDataset = trainDataset.batch(BATCHSIZE, drop_remainder=True)
+    validationDataset = validationDataset.batch(BATCHSIZE, drop_remainder=True)
 
-    Data = tf.data.Dataset.from_tensor_slices((allData[COLUMNS].values, allData['target'].values))
-    Data = Data.batch(BATCHSIZE, drop_remainder=True)
+    testDataset = tf.data.Dataset.from_tensor_slices((testDataFrame[COLUMNS].values, testDataFrame['target'].values))
+    testDataset = testDataset.batch(BATCHSIZE, drop_remainder=True)
 
+    classifier = createClassifier(means, scale);
+    classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                        loss="binary_crossentropy")
 
-    # classifier = createClassifier();
-    # classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-    #                     loss="binary_crossentropy")
-    # classifier.fit(Data, epochs=15)
+    class GradientCallBack(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            weights = [w for w in self.model.trainable_weights if 'dense' in w.name and 'bias' in w.name]
+            loss = self.model.total_loss
+            optimizer = self.model.optimizer
+            gradients = optimizer.get_gradients(loss, weights)
+            for t in gradients:
+                tf.summary.histogram(t.name, data=t.eval(), step=epoch)
+
+    class GradientTapeCallBack(tf.keras.callbacks.Callback):
+        def __init__(self, train_data):
+            self.train_data= train_data
+            self.frame = tf.convert_to_tensor(trainDataFrame[COLUMNS][TESTSET_SIZE:].values)
+            self.normalizingConst = trainDataFrame.shape[0]-TESTSET_SIZE
+
+        def on_epoch_end(self, epoch, logs=None):
+            with tf.GradientTape(persistent=True) as tape:
+                values = self.model(self.frame)
+
+            for l in [layer for layer in self.model.layers if 'dense' in layer.name]:
+                with tf.name_scope(l.name):
+                    grads = tape.gradient(values, l.trainable_variables)
+                    tf.summary.histogram(l.name+"/kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
+                    tf.summary.histogram(l.name+"/bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
+
+    file_writer = tf.summary.create_file_writer("logs")
+    file_writer.set_as_default()
+
+    # logdir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    tensorboardCallback = tf.keras.callbacks.TensorBoard(histogram_freq=1,
+                                                         update_freq='epoch')
+    gradientTapeCallback = GradientTapeCallBack(trainDataset)
+
+    classifier.fit(trainDataset,
+                   epochs=15,
+                   validation_data=validationDataset,
+                   # callbacks=[tensorboardCallback, gradientCallback])
+                   callbacks=[gradientTapeCallback, tensorboardCallback])
 
     sys.exit(1)
 
@@ -92,12 +135,12 @@ def main():
 
     allData = pd.DataFrame(train_input, columns=COLUMNS+["logPt", "weights", "unscaledTransverseMass"])
     allTarget = pd.DataFrame(train_target, columns=["target", "adversarialTarget"])
-    testData = pd.DataFrame(test_input, columns=COLUMNS+["logPt", "weights"])
+    testDataFrame = pd.DataFrame(test_input, columns=COLUMNS+["logPt", "weights"])
 
     scaler1 = MinMaxScaler()
     scaler3 = MinMaxScaler()
     allData["logPt"] = scaler3.fit_transform(allData["logPt"].to_numpy().reshape(-1, 1))
-    testData["logPt"] = scaler3.transform(testData["logPt"].to_numpy().reshape(-1, 1))
+    testDataFrame["logPt"] = scaler3.transform(testDataFrame["logPt"].to_numpy().reshape(-1, 1))
 
     classifierWeights = train_input["weights"].to_numpy()
     adversaryWeights = np.array(np.multiply(train_input["weights"], np.logical_not(train_target["target"])))

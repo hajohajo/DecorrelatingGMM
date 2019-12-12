@@ -6,11 +6,15 @@ from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HID
 import math
 import numpy as np
 
+
 #Performs the work of the sklearn StandardScaler. Requires the feature means and scales as input, but
 #after that the values are store here for the easy deployment of the model.
 #Is meant to be deployed right after the Input layer
+
+### The means and scale input variables to the layer can be gotten from sklearn StandardScaler properties .means_ and ._scale
 class StandardScalerLayer(tf.keras.layers.Layer):
-    def __init__(self, means, scale, **kwargs):
+    def __init__(self, means, scale, units=BATCHSIZE, **kwargs):
+        self.units = units
         self.means = tf.convert_to_tensor(np.reshape(means, (1, means.shape[-1])), dtype='float32')
         self.invertedScale = tf.convert_to_tensor(1.0 / np.reshape(scale, (1, scale.shape[-1])), dtype='float32')
         super(StandardScalerLayer, self).__init__(**kwargs)
@@ -22,6 +26,8 @@ class StandardScalerLayer(tf.keras.layers.Layer):
     def call(self, input):
         return tf.math.multiply((input-self.means), self.invertedScale)
 
+    def get_config(self):
+        return {'units': self.units}
 
 def trainingLoop(classifier, adversary, train_input, train_target, epochs):
     numberOfBatches = np.ceil(train_input.shape[0] / BATCHSIZE)
@@ -55,26 +61,25 @@ beta = tf.Variable(initial_value=1.0, trainable=True, name='swish_beta')
 def altSwish(x):
     return x * tf.nn.sigmoid(beta*x)
 
-def createClassifier():
+def createClassifier(means, scale):
     _activation = altSwish #swish #'relu'
     _initialization = 'glorot_normal'
-    _nodes = 16
+    _regularizer = keras.regularizers.l1(0.01)
+    _nodes = 32
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(_inputs)
+    x = StandardScalerLayer(means, scale)(_inputs)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense1")(x)
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense2")(x)
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense3")(x)  #
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense4")(x)  #
     x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
-    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
-    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
-    # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization)(x)  #
-
-    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, name="out_classifier")(x)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense5")(x)  #
+    x = keras.layers.BatchNormalization()(x)
+    _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="dense_output")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
 
