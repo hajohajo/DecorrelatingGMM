@@ -83,7 +83,6 @@ def main():
     classifier.fit(trainDataset,
                    epochs=15,
                    validation_data=validationDataset,
-                   # callbacks=[tensorboardCallback, gradientCallback])
                    callbacks=[gradientTapeCallback, tensorboardCallback])
 
     sys.exit(1)

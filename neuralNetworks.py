@@ -64,21 +64,21 @@ def altSwish(x):
 def createClassifier(means, scale):
     _activation = altSwish #swish #'relu'
     _initialization = 'glorot_normal'
-    _regularizer = keras.regularizers.l1(0.01)
+    _regularizer = keras.regularizers.l1(0.0)
     _nodes = 32
+    _numBlocks = 10
+    _dropRate = 0.1
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = StandardScalerLayer(means, scale)(_inputs)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense1")(x)
-    x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense2")(x)
-    x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense3")(x)  #
-    x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense4")(x)  #
-    x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense5")(x)  #
-    x = keras.layers.BatchNormalization()(x)
+
+    for i in range(_numBlocks):
+        _name = "classifierDense"+str(i+1)
+        x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization,
+                               kernel_regularizer=_regularizer, name=_name)(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Dropout(_dropRate)(x)
+
     _outputs = keras.layers.Dense(1, activation="sigmoid", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense_output")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
