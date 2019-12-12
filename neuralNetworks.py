@@ -2,7 +2,7 @@ from tensorflow import keras
 from tensorflow.keras.activations import sigmoid
 import tensorflow_probability as tfp
 import tensorflow as tf
-from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS, COLUMNS
+from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS, COLUMNS, TESTSET_SIZE
 import math
 import numpy as np
 
@@ -219,3 +219,23 @@ class JSDMetric(tf.keras.callbacks.Callback):
 
         self.epoch += 1
 
+
+class GradientTapeCallBack(tf.keras.callbacks.Callback):
+    def __init__(self, train_data):
+        self.train_data = train_data
+        self.frame = tf.convert_to_tensor(self.train_data[COLUMNS][TESTSET_SIZE:].values)
+        self.normalizingConst = self.train_data.shape[0]-TESTSET_SIZE
+        self.file_writer = tf.summary.create_file_writer("logs/train")
+        self.file_writer.set_as_default()
+
+    def on_epoch_end(self, epoch, logs=None):
+        with tf.GradientTape(persistent=True) as tape:
+            values = self.model(self.frame)
+
+        for l in [layer for layer in self.model.layers if 'classifierDense' in layer.name]:
+            with tf.name_scope(l.name):
+                grads = tape.gradient(values, l.trainable_variables)
+                tf.summary.histogram("kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
+                tf.summary.histogram("bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
+
+        self.file_writer.flush()

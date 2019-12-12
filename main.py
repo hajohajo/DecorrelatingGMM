@@ -1,9 +1,9 @@
 from utilities import createDirectories
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, StandardScalerLayer
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
-from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE
+from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE
 
 from sklearn.model_selection import train_test_split
 from plotting import classifierVsX
@@ -24,7 +24,6 @@ tf.random.set_seed(13)
 print(tf.executing_eagerly())
 
 def main():
-    TESTSET_SIZE = 10000
     columns = COLUMNS
 
     baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
@@ -73,33 +72,13 @@ def main():
     classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                         loss="binary_crossentropy")
 
-    class GradientTapeCallBack(tf.keras.callbacks.Callback):
-        def __init__(self, train_data):
-            self.train_data = train_data
-            self.frame = tf.convert_to_tensor(trainDataFrame[COLUMNS][TESTSET_SIZE:].values)
-            self.normalizingConst = trainDataFrame.shape[0]-TESTSET_SIZE
-            self.file_writer = tf.summary.create_file_writer("logs/train")
-            self.file_writer.set_as_default()
-
-        def on_epoch_end(self, epoch, logs=None):
-            with tf.GradientTape(persistent=True) as tape:
-                values = self.model(self.frame)
-
-            for l in [layer for layer in self.model.layers if 'classifierDense' in layer.name]:
-                with tf.name_scope(l.name):
-                    grads = tape.gradient(values, l.trainable_variables)
-                    tf.summary.histogram("kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
-                    tf.summary.histogram("bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
-
-            self.file_writer.flush()
-
 
     # logdir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
     tensorboardCallback = tf.keras.callbacks.TensorBoard(histogram_freq=1,
                                                          update_freq='epoch',
                                                          profile_batch=0)
-    gradientTapeCallback = GradientTapeCallBack(trainDataset)
+    gradientTapeCallback = GradientTapeCallBack(trainDataFrame)
 
     classifier.fit(trainDataset,
                    epochs=15,

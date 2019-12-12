@@ -13,6 +13,7 @@ BATCHSIZE = 32 #1024
 PTBINS = 100 #30
 PTMIN = 0.0
 PTMAX = 1000.0
+TESTSET_SIZE = 10000
 
 COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
 #COLUMNS= ["tauPt", "TransverseMass"]
