@@ -1,5 +1,5 @@
 from utilities import createDirectories
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, altSwish
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
@@ -75,7 +75,7 @@ def main():
     classifierModelPath = "./models/classifierBeforeTraining.h5"
     if(os.path.exists(classifierModelPath)):
         classifier = tf.keras.models.load_model(classifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
-                                                                                        "altSwish" : altSwish})
+                                                                                        "swish" : swish})
     else:
         classifier = createClassifier(means, scale);
         classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),

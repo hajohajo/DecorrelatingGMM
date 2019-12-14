@@ -63,7 +63,7 @@ def altSwish(x):
     return x * tf.nn.sigmoid(beta*x)
 
 def createClassifier(means, scale):
-    _activation = altSwish #swish #'relu'
+    _activation = swish #'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l1(0.0)
     _nodes = 124
