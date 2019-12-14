@@ -3,7 +3,7 @@ from neuralNetworks import createChainedModel_v3, createClassifier, createAdvers
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
-from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE
+from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE, PRETRAINEPOCHS
 
 from sklearn.model_selection import train_test_split
 from plotting import classifierVsX
@@ -60,7 +60,8 @@ def main():
     sampleWeights_classifier[trainDataFrame.target == 0] = compute_sample_weight('balanced', digitized[trainDataFrame.target == 0])
     sampleWeights_adversary[trainDataFrame.target == 1] = 0
 
-    trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values, sampleWeights_classifier))
+    # trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values, sampleWeights_classifier))
+    trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values))
     validationDataset = trainDataset.take(TESTSET_SIZE)
     trainDataset = trainDataset.skip(TESTSET_SIZE)
 
@@ -80,7 +81,8 @@ def main():
 
     chainedModel = createChainedModel(classifier, adversary)
     chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                         loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)])
+                         loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
+                         loss_weights=[1.0, 10.0])
 
     print(classifier.summary())
     print(adversary.summary())
@@ -99,7 +101,7 @@ def main():
     sampleWeights_adversary=np.array(sampleWeights_adversary)
 
     classifier.fit(trainDataset,
-                   epochs=15,
+                   epochs=PRETRAINEPOCHS,
                    validation_data=validationDataset)
     classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "Before")
 
@@ -107,15 +109,16 @@ def main():
     advInput = classifier.predict(trainDataFrame[COLUMNS].to_numpy())
 
     adversary.fit(advInput, digitized,
-                  epochs=15,
+                  epochs=PRETRAINEPOCHS,
                   sample_weight=sampleWeights_adversary,
                   batch_size=BATCHSIZE) #,
 
     chainedModel.fit(trainDataFrame[COLUMNS].to_numpy(), [trainDataFrame['target'].to_numpy(), digitized],
-                     epochs=15,
+                     epochs=100,
                      batch_size=BATCHSIZE,
-                     sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary},
-                     callbacks=[gradientTapeCallback, tensorboardCallback])
+                     callbacks=[tensorboardCallback],
+                     sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
+                     # callbacks=[gradientTapeCallback, tensorboardCallback])
 
 
     print(testDataFrame.columns)
@@ -123,87 +126,8 @@ def main():
 
     sys.exit(1)
 
-    weights = np.ones(allData.shape[0])
-    binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
-    digitized = np.digitize(np.clip(allData['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False) - 1
-
-    allData_target = allData['target'].values
-    allData_adversarialTarget = allData['unscaledTransverseMass'].values
-
-    weights[allData.target==0] = compute_sample_weight('balanced', digitized[allData.target==0])
-    allData["weights"] = weights
-
-    scaler2 = MinMaxScaler()
-
-    allData["adversarialTarget"] = allData_adversarialTarget
-    allData["adversarialTarget"] = scaler2.fit_transform(allData["adversarialTarget"].to_numpy().reshape(-1, 1))
-    train_input, test_input, train_target, test_target = train_test_split(allData[columns+["logPt", "weights", "unscaledTransverseMass"]],
-                                                                          allData[["target", "adversarialTarget"]],
-                                                                          test_size=TESTSET_SIZE)
-
-    allData = pd.DataFrame(train_input, columns=COLUMNS+["logPt", "weights", "unscaledTransverseMass"])
-    allTarget = pd.DataFrame(train_target, columns=["target", "adversarialTarget"])
-    testDataFrame = pd.DataFrame(test_input, columns=COLUMNS+["logPt", "weights"])
-
-    scaler1 = MinMaxScaler()
-    scaler3 = MinMaxScaler()
-    allData["logPt"] = scaler3.fit_transform(allData["logPt"].to_numpy().reshape(-1, 1))
-    testDataFrame["logPt"] = scaler3.transform(testDataFrame["logPt"].to_numpy().reshape(-1, 1))
-
-    classifierWeights = train_input["weights"].to_numpy()
-    adversaryWeights = np.array(np.multiply(train_input["weights"], np.logical_not(train_target["target"])))
-
-
-
     jsdMetric = JSDMetric(classifierCut=0.5,
                           validation_data=(allData.sample(frac=0.1), train_target['target'].sample(frac=0.1)))
-
-    classifier = createClassifier()
-    classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                        loss="binary_crossentropy")
-
-    adversary = createAdversary()
-    chained3 = createChainedModel_v3(classifier, adversary, 10.0)
-
-    chained3.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                     loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                     weights=[1.0, 1.0])
-
-    setTrainable(classifier, False)
-    chainedFreeze = createChainedModel_v3(classifier, adversary, 10.0)
-    chainedFreeze.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                     loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                     weights=[1.0, 1.0])
-
-
-
-
-
-    variableData = allData["unscaledTransverseMass"].copy()
-
-    classifier.fit(allData[COLUMNS].to_numpy(), allTarget['target'].to_numpy(),
-                    epochs=100,
-                    batch_size=BATCHSIZE,
-                    sample_weight=classifierWeights,
-                    validation_split=0.05)
-    classifierVsX(classifier, allData[COLUMNS], allTarget, "TransverseMass", variableData, "Before")
-
-    chainedFreeze.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
-                 epochs=100,
-                 batch_size=BATCHSIZE,
-                 sample_weight={"out_classifier": classifierWeights, "Adversary": adversaryWeights},
-                 # sample_weight=[classifierWeights, adversaryWeights],
-                 callbacks=[jsdMetric])
-
-    chained3.fit([allData[COLUMNS].to_numpy(), allData["logPt"].to_numpy()], [allTarget['target'].to_numpy(), allTarget['adversarialTarget'].to_numpy()],
-                 epochs=300,
-                 batch_size=BATCHSIZE,
-                 # sample_weight=[classifierWeights, adversaryWeights],
-                 sample_weight={"out_classifier":classifierWeights, "Adversary":adversaryWeights},
-                 callbacks=[jsdMetric])
-
-    classifierVsX(classifier, train_input[COLUMNS], train_target, "TransverseMass", variableData, "After")
-
 
 
 if __name__ == "__main__":

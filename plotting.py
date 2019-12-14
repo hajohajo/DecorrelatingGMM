@@ -14,7 +14,7 @@ xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "deltaPhiTauMet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiTauBjet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiBjetMet" : np.linspace(0.0, np.pi, 30),
-            "TransverseMass" : np.linspace(PTMIN, PTMAX, PTBINS)} #np.linspace(0.0, 600.0, 100)}
+            "TransverseMass" : np.linspace(0.0, 1000.0, 100)} #np.linspace(0.0, 600.0, 100)}
 
 xLabel = {"tauPt" : r"Tau p$_T$",
             "MET" : r"E$_{T, miss}$",
@@ -107,7 +107,7 @@ def classifierVsX(classifier, inputData, targetData, variableName, variableData,
     plt.xlabel(xLabel[variableName])
     plt.ylabel("Mean MVA output per bin")
     plt.ylim(0.0, 1.0)
-    plt.xlim(PTMIN, PTMAX)
+    plt.xlim(binning[0],binning[-1]+width)
     plt.title("Classifier output and std w.r.t. " + xLabel[variableName])
     plt.legend()
 

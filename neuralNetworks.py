@@ -94,7 +94,7 @@ def JensenShannonDivergence(y_true, y_pred):
 def gradReverse(x): #, gamma=1.0):
     y = tf.identity(x)
     def custom_gradient(dy):
-        return -10*dy
+        return -100*dy
     return y, custom_gradient
 
 class GradReverse(tf.keras.layers.Layer):
@@ -229,6 +229,8 @@ class GradientTapeCallBack(tf.keras.callbacks.Callback):
         self.file_writer.set_as_default()
 
     def on_epoch_end(self, epoch, logs=None):
+        if(epoch%5!=0):
+            return
         with tf.GradientTape(persistent=True) as tape:
             values = self.model(self.frame)
             if(isinstance(values, list)):
