@@ -72,15 +72,16 @@ def main():
     testDataset = tf.data.Dataset.from_tensor_slices((testDataFrame[COLUMNS].values, testDataFrame['target'].values))
     testDataset = testDataset.batch(BATCHSIZE, drop_remainder=True)
 
-    if(os.path.exists("./models/classifier.h5")):
-        classifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,
+    classifierModelPath = "./models/classifierBeforeTraining.h5"
+    if(os.path.exists(classifierModelPath)):
+        classifier = tf.keras.models.load_model(classifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
                                                                                         "altSwish" : altSwish})
     else:
         classifier = createClassifier(means, scale);
         classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                             loss="binary_crossentropy")
 
-        classifier.save("models/classifier.h5")
+        classifier.save(classifierModelPath)
 
     adversary = createAdversary()
     adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
@@ -127,6 +128,7 @@ def main():
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
                      # callbacks=[gradientTapeCallback, tensorboardCallback])
 
+    classifier.save("models/classifier.h5")
 
     print(testDataFrame.columns)
     classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "After")
