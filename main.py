@@ -1,5 +1,5 @@
 from utilities import createDirectories
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, altSwish
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
@@ -14,6 +14,7 @@ import tensorflow as tf
 import glob
 
 import sys
+import os
 from datetime import datetime
 
 from root_pandas import read_root
@@ -71,9 +72,15 @@ def main():
     testDataset = tf.data.Dataset.from_tensor_slices((testDataFrame[COLUMNS].values, testDataFrame['target'].values))
     testDataset = testDataset.batch(BATCHSIZE, drop_remainder=True)
 
-    classifier = createClassifier(means, scale);
-    classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                        loss="binary_crossentropy")
+    if(os.path.exists("./models/classifier.h5")):
+        classifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,
+                                                                                        "altSwish" : altSwish})
+    else:
+        classifier = createClassifier(means, scale);
+        classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                            loss="binary_crossentropy")
+
+        classifier.save("models/classifier.h5")
 
     adversary = createAdversary()
     adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),

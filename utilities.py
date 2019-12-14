@@ -10,3 +10,6 @@ def createDirectories():
             os.makedirs(directory)
         else:
             os.makedirs(directory)
+
+    if(not os.path.exists("models")):
+        os.makedirs("models")

@@ -13,10 +13,11 @@ import numpy as np
 
 ### The means and scale input variables to the layer can be gotten from sklearn StandardScaler properties .means_ and ._scale
 class StandardScalerLayer(tf.keras.layers.Layer):
-    def __init__(self, means, scale, units=BATCHSIZE, **kwargs):
-        self.units = units
-        self.means = tf.convert_to_tensor(np.reshape(means, (1, means.shape[-1])), dtype='float32')
-        self.invertedScale = tf.convert_to_tensor(1.0 / np.reshape(scale, (1, scale.shape[-1])), dtype='float32')
+    def __init__(self, means, scale, **kwargs):
+        self.means = np.array(means)
+        self.scale = np.array(scale)
+        self.tensorMeans = tf.convert_to_tensor(np.reshape(self.means, (1, self.means.shape[-1])), dtype='float32')
+        self.invertedScale = tf.convert_to_tensor(1.0 / np.reshape(self.scale, (1, self.scale.shape[-1])), dtype='float32')
         super(StandardScalerLayer, self).__init__(**kwargs)
 
 
@@ -24,10 +25,10 @@ class StandardScalerLayer(tf.keras.layers.Layer):
         super(StandardScalerLayer, self).build(input_shape)
 
     def call(self, input):
-        return tf.math.multiply((input-self.means), self.invertedScale)
+        return tf.math.multiply((input - self.tensorMeans), self.invertedScale)
 
     def get_config(self):
-        return {'units': self.units}
+        return {'means': self.means, 'scale': self.scale}
 
 def trainingLoop(classifier, adversary, train_input, train_target, epochs):
     numberOfBatches = np.ceil(train_input.shape[0] / BATCHSIZE)
