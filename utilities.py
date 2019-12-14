@@ -5,25 +5,25 @@ from hyperOptimization import COLUMNS
 import glob
 
 eventTypeDict = {
-    "ChargedHiggs_" : 1,
-    "TT_" : 2,
-    "DYJets" : 3,
-    "QCD_" : 4,
-    "ST_" : 5,
-    "WJets" : 6,
-    "WW" : 7,
-    "WZ" : 7,
-    "ZZ" : 7
+    "ChargedHiggs_" : 0,
+    "TT_" : 1,
+    "DYJets" : 2,
+    "QCD_" : 3,
+    "ST_" : 4,
+    "WJets" : 5,
+    "WW" : 6,
+    "WZ" : 6,
+    "ZZ" : 6
 }
 
 invertedEventTypeDict = {
-    1 : "Charged",
-    2 : "TT",
-    3 : "DY",
-    4 : "QCD",
-    5 : "ST",
-    6 : "WJets",
-    7 : "Diboson"
+    0 : "Charged",
+    1 : "TT",
+    2 : "DY",
+    3 : "QCD",
+    4 : "ST",
+    5 : "WJets",
+    6 : "Diboson"
 }
 
 def readDatasetsToDataframes(pathToFolder):
@@ -35,7 +35,7 @@ def readDatasetsToDataframes(pathToFolder):
         dataset["eventType"] = eventTypeDict[identifier]
         listOfDatasets.append(dataset)
 
-    return listOfDatasets
+    return listOfDatasets[0], listOfDatasets[1:]
 
 def createDirectories():
     directories = ["plots", "logs"]

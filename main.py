@@ -1,5 +1,5 @@
 from utilities import createDirectories, readDatasetsToDataframes
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
@@ -32,26 +32,17 @@ def main():
     # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
 
 
-    datasets=readDatasetsToDataframes(baseUrl)
-    print(datasets)
-    print(datasets[0].head())
+    signalDataset, backgroundDatasets=readDatasetsToDataframes(baseUrl)
 
-    sys.exit(1)
-
-    signal = read_root(signalFilePaths, columns=columns)
-    background = read_root(backgroundFilePaths, columns=columns)
-    signal['target'] = 1
-    background['target'] = 0
-
-    events = min(signal.shape[0], background.shape[0])
-
-    signal = signal.sample(n=events)
-    background = background.sample(n=events)
+    numberOfSignalEvents = signalDataset.shape[0]
+    numberOfBackgroundEvents = np.sum([x.shape[0] for x in backgroundDatasets])
+    if(numberOfSignalEvents>numberOfBackgroundEvents):
+        signalDataset = signalDataset.sample(n=numberOfBackgroundEvents)
 
     createDirectories()
 
-    allData = signal.append(background, ignore_index=True)
-    allData = allData[columns+["target"]]
+    allData = signalDataset.append(backgroundDatasets, ignore_index=True)
+    # allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
 #    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
@@ -65,18 +56,22 @@ def main():
     sampleWeights_adversary = np.ones(trainDataFrame.shape[0])
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
     digitized = np.digitize(np.clip(trainDataFrame['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False).astype(np.float32)
-    sampleWeights_classifier[trainDataFrame.target == 0] = compute_sample_weight('balanced', digitized[trainDataFrame.target == 0])
-    sampleWeights_adversary[trainDataFrame.target == 1] = 0
+    sampleWeights_classifier[trainDataFrame.eventType != 0] = compute_sample_weight('balanced', digitized[trainDataFrame.eventType != 0])
+    sampleWeights_adversary[trainDataFrame.eventType == 0] = 0
+
+    print(tf.keras.utils.to_categorical(trainDataFrame["eventType"].values))
+    trainDataTargets = tf.keras.utils.to_categorical(trainDataFrame["eventType"].values)
 
     # trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values, sampleWeights_classifier))
-    trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values))
+    # trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['eventType'].values))
+    trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataTargets))
     validationDataset = trainDataset.take(TESTSET_SIZE)
     trainDataset = trainDataset.skip(TESTSET_SIZE)
 
     trainDataset = trainDataset.batch(BATCHSIZE, drop_remainder=True)
     validationDataset = validationDataset.batch(BATCHSIZE, drop_remainder=True)
 
-    testDataset = tf.data.Dataset.from_tensor_slices((testDataFrame[COLUMNS].values, testDataFrame['target'].values))
+    testDataset = tf.data.Dataset.from_tensor_slices((testDataFrame[COLUMNS].values, testDataFrame['eventType'].values))
     testDataset = testDataset.batch(BATCHSIZE, drop_remainder=True)
 
     classifierModelPath = "./models/classifierBeforeTraining.h5"
@@ -84,24 +79,24 @@ def main():
         classifier = tf.keras.models.load_model(classifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
                                                                                         "swish" : swish})
     else:
-        classifier = createClassifier(means, scale);
+        classifier = createMultiClassifier(means, scale);
         classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                             loss="binary_crossentropy")
 
         classifier.save(classifierModelPath)
 
-    adversary = createAdversary()
-    adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                      loss=lambda y, model: -model.log_prob(y+1e-8))
-
-    chainedModel = createChainedModel(classifier, adversary)
-    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                         loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                         loss_weights=[1.0, 10.0])
-
-    print(classifier.summary())
-    print(adversary.summary())
-    print(chainedModel.summary())
+    # adversary = createAdversary()
+    # adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+    #                   loss=lambda y, model: -model.log_prob(y+1e-8))
+    #
+    # chainedModel = createChainedModel(classifier, adversary)
+    # chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+    #                      loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
+    #                      loss_weights=[1.0, 10.0])
+    #
+    # print(classifier.summary())
+    # print(adversary.summary())
+    # print(chainedModel.summary())
 
 
     # logdir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -120,6 +115,7 @@ def main():
                    validation_data=validationDataset)
     classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "Before")
 
+    sys.exit(1)
 
     advInput = classifier.predict(trainDataFrame[COLUMNS].to_numpy())
 

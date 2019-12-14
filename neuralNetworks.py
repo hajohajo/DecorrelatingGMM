@@ -62,6 +62,30 @@ beta = tf.Variable(initial_value=1.0, trainable=True, name='swish_beta')
 def altSwish(x):
     return x * tf.nn.sigmoid(beta*x)
 
+def createMultiClassifier(means, scale):
+    _activation = swish #'relu'
+    _initialization = 'glorot_normal'
+    _regularizer = keras.regularizers.l1(0.0)
+    _nodes = 124
+    _numBlocks = 5
+    _dropRate = 0.0
+
+    _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
+    x = StandardScalerLayer(means, scale)(_inputs)
+
+    for i in range(_numBlocks):
+        _name = "classifierDense"+str(i+1)
+        x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization,
+                               kernel_regularizer=_regularizer, name=_name)(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Dropout(_dropRate)(x)
+
+    _outputs = keras.layers.Dense(7, activation="softmax", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense_output")(x)
+
+    model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
+
+    return model
+
 def createClassifier(means, scale):
     _activation = swish #'relu'
     _initialization = 'glorot_normal'
