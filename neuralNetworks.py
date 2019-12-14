@@ -65,9 +65,9 @@ def createClassifier(means, scale):
     _activation = altSwish #swish #'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l1(0.0)
-    _nodes = 32
-    _numBlocks = 10
-    _dropRate = 0.1
+    _nodes = 124
+    _numBlocks = 5
+    _dropRate = 0.0
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     x = StandardScalerLayer(means, scale)(_inputs)
@@ -105,38 +105,38 @@ class GradReverse(tf.keras.layers.Layer):
     def call(self, x):
         return gradReverse(x) #, self.gamma)
 
+def createChainedModel(classifier, adversary):
+    x = GradReverse()(classifier.output)
+    full_output = adversary(x)
+    model = tf.keras.Model(inputs=classifier.input, outputs=[classifier.output, full_output]) #adversary(x)])
+    return model
+
 def createChainedModel_v3(classifier, adversary, gamma):
 
     x = GradReverse(gamma)(classifier.output)
     chainedModel = tf.keras.Model(inputs=[classifier.input, adversary.inputs[1]],
-                                  outputs=[classifier.output, adversary([x, adversary.inputs[1]])])
+                                  outputs=[classifier.output, adversary([x])])
 
     return chainedModel
 
 def createAdversary():
     event_shape = [1]
-    numberOfGaussians = 10
+    numberOfGaussians = 20
 
 
     params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
                                                               component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
 
-    inputs = keras.Input(shape=(1), name="inputAdversary")
-    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-    x = keras.layers.Concatenate()([inputs, auxiliary])
-    x = keras.layers.Dense(32, activation='relu', kernel_initializer='glorot_uniform', name='hidden')(x)
-    x = keras.layers.Dense(params_size, activation=None)(x)
+    _inputs = keras.Input(shape=(1), name="inputAdversary")
+    # auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
+    # x = keras.layers.Concatenate()([inputs, auxiliary])
+    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden')(_inputs) #(x)
+    x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
-    model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
+    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
+    # model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
 
-#     model = tf.keras.Sequential([
-#         keras.Input(shape=(1), name='input'),
-#         keras.layers.Dense(256, activation='relu', kernel_initializer='glorot_uniform', name='hidden'),
-#         keras.layers.Dense(params_size, activation=None),
-#         tfp.layers.MixtureNormal(numberOfGaussians, event_shape),
-# #        keras.layers.Dense(PTBINS, activation=tf.nn.softmax, kernel_initializer='glorot_uniform')
-#     ])
     return model
 
 
@@ -223,7 +223,7 @@ class JSDMetric(tf.keras.callbacks.Callback):
 class GradientTapeCallBack(tf.keras.callbacks.Callback):
     def __init__(self, train_data):
         self.train_data = train_data
-        self.frame = tf.convert_to_tensor(self.train_data[COLUMNS][TESTSET_SIZE:].values)
+        self.frame = tf.convert_to_tensor(self.train_data[TESTSET_SIZE:])
         self.normalizingConst = self.train_data.shape[0]-TESTSET_SIZE
         self.file_writer = tf.summary.create_file_writer("logs/train")
         self.file_writer.set_as_default()
@@ -231,11 +231,21 @@ class GradientTapeCallBack(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         with tf.GradientTape(persistent=True) as tape:
             values = self.model(self.frame)
+            if(isinstance(values, list)):
+                values[1] = tf.convert_to_tensor(values[1], dtype=tf.float32)
 
         for l in [layer for layer in self.model.layers if 'classifierDense' in layer.name]:
             with tf.name_scope(l.name):
-                grads = tape.gradient(values, l.trainable_variables)
-                tf.summary.histogram("kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
-                tf.summary.histogram("bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
+                if (isinstance(values, list)):
+                    gradsClassifier = tape.gradient(values[0], l.trainable_variables)
+                    tf.summary.histogram("kernel_gradients_classifier", data=gradsClassifier[0]/self.normalizingConst, step=epoch)
+                    tf.summary.histogram("bias_gradients_classifier", data=gradsClassifier[1]/self.normalizingConst, step=epoch)
+                    gradsAdversary = tape.gradient(values[1], l.trainable_variables)
+                    tf.summary.histogram("kernel_gradients_adversary", data=gradsAdversary[0]/self.normalizingConst, step=epoch)
+                    tf.summary.histogram("bias_gradients_adversary", data=gradsAdversary[1]/self.normalizingConst, step=epoch)
+                else:
+                    grads = tape.gradient(values, l.trainable_variables)
+                    tf.summary.histogram("kernel_gradients", data=grads[0]/self.normalizingConst, step=epoch)
+                    tf.summary.histogram("bias_gradients", data=grads[1]/self.normalizingConst, step=epoch)
 
         self.file_writer.flush()

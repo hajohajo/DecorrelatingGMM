@@ -75,6 +75,7 @@ def classifierVsX(classifier, inputData, targetData, variableName, variableData,
 
     bkg = inputData[(targetData['target']==0)]
     sig = inputData[(targetData['target']==1)]
+
     samples = [sig, bkg]
     labels = ["signal", "background"]
     colors = [sns.xkcd_rgb["teal"], sns.xkcd_rgb["crimson"]]

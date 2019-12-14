@@ -1,5 +1,5 @@
 from utilities import createDirectories
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
@@ -54,9 +54,11 @@ def main():
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
 
     sampleWeights_classifier = np.ones(trainDataFrame.shape[0])
+    sampleWeights_adversary = np.ones(trainDataFrame.shape[0])
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
-    digitized = np.digitize(np.clip(trainDataFrame['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False)
+    digitized = np.digitize(np.clip(trainDataFrame['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False).astype(np.float32)
     sampleWeights_classifier[trainDataFrame.target == 0] = compute_sample_weight('balanced', digitized[trainDataFrame.target == 0])
+    sampleWeights_adversary[trainDataFrame.target == 1] = 0
 
     trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values, sampleWeights_classifier))
     validationDataset = trainDataset.take(TESTSET_SIZE)
@@ -72,18 +74,52 @@ def main():
     classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                         loss="binary_crossentropy")
 
+    adversary = createAdversary()
+    adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                      loss=lambda y, model: -model.log_prob(y+1e-8))
+
+    chainedModel = createChainedModel(classifier, adversary)
+    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                         loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)])
+
+    print(classifier.summary())
+    print(adversary.summary())
+    print(chainedModel.summary())
+
 
     # logdir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
     tensorboardCallback = tf.keras.callbacks.TensorBoard(histogram_freq=1,
                                                          update_freq='epoch',
                                                          profile_batch=0)
-    gradientTapeCallback = GradientTapeCallBack(trainDataFrame)
+    gradientTapeCallback = GradientTapeCallBack(trainDataFrame[COLUMNS].to_numpy())
+
+
+    sampleWeights_classifier=np.array(sampleWeights_classifier)
+    sampleWeights_adversary=np.array(sampleWeights_adversary)
 
     classifier.fit(trainDataset,
                    epochs=15,
-                   validation_data=validationDataset,
-                   callbacks=[gradientTapeCallback, tensorboardCallback])
+                   validation_data=validationDataset)
+    classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "Before")
+
+
+    advInput = classifier.predict(trainDataFrame[COLUMNS].to_numpy())
+
+    adversary.fit(advInput, digitized,
+                  epochs=15,
+                  sample_weight=sampleWeights_adversary,
+                  batch_size=BATCHSIZE) #,
+
+    chainedModel.fit(trainDataFrame[COLUMNS].to_numpy(), [trainDataFrame['target'].to_numpy(), digitized],
+                     epochs=15,
+                     batch_size=BATCHSIZE,
+                     sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary},
+                     callbacks=[gradientTapeCallback, tensorboardCallback])
+
+
+    print(testDataFrame.columns)
+    classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "After")
 
     sys.exit(1)
 
