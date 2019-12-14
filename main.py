@@ -1,4 +1,4 @@
-from utilities import createDirectories
+from utilities import createDirectories, readDatasetsToDataframes
 from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -28,8 +28,15 @@ def main():
     columns = COLUMNS
 
     baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
-    signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
-    backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
+    # signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
+    # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
+
+
+    datasets=readDatasetsToDataframes(baseUrl)
+    print(datasets)
+    print(datasets[0].head())
+
+    sys.exit(1)
 
     signal = read_root(signalFilePaths, columns=columns)
     background = read_root(backgroundFilePaths, columns=columns)
