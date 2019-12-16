@@ -90,7 +90,7 @@ def createClassifier(means, scale):
     _activation = swish #'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l1(0.0)
-    _nodes = 124
+    _nodes = 1024
     _numBlocks = 5
     _dropRate = 0.0
 
@@ -143,6 +143,28 @@ def createChainedModel_v3(classifier, adversary, gamma):
                                   outputs=[classifier.output, adversary([x])])
 
     return chainedModel
+
+from utilities import invertedEventTypeDict
+def createMultiAdversary():
+    event_shape = [1]
+    numberOfGaussians = 20
+
+
+    params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
+                                                              component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
+
+    _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
+    # auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
+    # x = keras.layers.Concatenate()([inputs, auxiliary])
+    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden')(_inputs) #(x)
+    x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
+    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
+
+    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
+    # model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
+
+    return model
+
 
 def createAdversary():
     event_shape = [1]

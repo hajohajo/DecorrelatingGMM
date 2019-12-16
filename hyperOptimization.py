@@ -13,9 +13,9 @@ BATCHSIZE = 256 #1024
 PTBINS = 20
 PTMIN = 0.0
 PTMAX = 200.0
-TESTSET_SIZE = 10000
+TESTSET_SIZE = 20000
 
-PRETRAINEPOCHS=15
+PRETRAINEPOCHS=20
 
 COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
 #COLUMNS= ["tauPt", "TransverseMass"]

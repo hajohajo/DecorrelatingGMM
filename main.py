@@ -1,12 +1,12 @@
 from utilities import createDirectories, readDatasetsToDataframes
-from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier
+from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier, createMultiAdversary
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
 from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE, PRETRAINEPOCHS
 
 from sklearn.model_selection import train_test_split
-from plotting import classifierVsX
+from plotting import classifierVsX, multiClassClassifierVsX
 
 import numpy as np
 import tensorflow as tf
@@ -81,22 +81,22 @@ def main():
     else:
         classifier = createMultiClassifier(means, scale);
         classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                            loss="binary_crossentropy")
+                            loss="categorical_crossentropy")
 
         classifier.save(classifierModelPath)
 
-    # adversary = createAdversary()
-    # adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-    #                   loss=lambda y, model: -model.log_prob(y+1e-8))
-    #
-    # chainedModel = createChainedModel(classifier, adversary)
-    # chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-    #                      loss=["binary_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-    #                      loss_weights=[1.0, 10.0])
-    #
-    # print(classifier.summary())
-    # print(adversary.summary())
-    # print(chainedModel.summary())
+    adversary = createMultiAdversary()
+    adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                      loss=lambda y, model: -model.log_prob(y+1e-8))
+
+    chainedModel = createChainedModel(classifier, adversary)
+    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                         loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
+                         loss_weights=[1.0, 10.0])
+
+    print(classifier.summary())
+    print(adversary.summary())
+    print(chainedModel.summary())
 
 
     # logdir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -113,19 +113,17 @@ def main():
     classifier.fit(trainDataset,
                    epochs=PRETRAINEPOCHS,
                    validation_data=validationDataset)
-    classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "Before")
+    multiClassClassifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
 
-    sys.exit(1)
-
-    advInput = classifier.predict(trainDataFrame[COLUMNS].to_numpy())
+    advInput = classifier.predict(trainDataFrame.loc[:, COLUMNS].to_numpy())
 
     adversary.fit(advInput, digitized,
                   epochs=PRETRAINEPOCHS,
                   sample_weight=sampleWeights_adversary,
                   batch_size=BATCHSIZE) #,
 
-    chainedModel.fit(trainDataFrame[COLUMNS].to_numpy(), [trainDataFrame['target'].to_numpy(), digitized],
-                     epochs=100,
+    chainedModel.fit(trainDataFrame.loc[:, COLUMNS].to_numpy(), [tf.keras.utils.to_categorical(trainDataFrame.loc[:,"eventType"].values), digitized],
+                     epochs=20,
                      batch_size=BATCHSIZE,
                      callbacks=[tensorboardCallback],
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
@@ -133,8 +131,13 @@ def main():
 
     classifier.save("models/classifier.h5")
 
-    print(testDataFrame.columns)
-    classifierVsX(classifier, testDataFrame[COLUMNS], testDataFrame, "TransverseMass", testDataFrame["TransverseMass"], "After")
+    multiClassClassifierVsX(classifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
+
+    loadedClassifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,
+                                                                                        "swish" : swish})
+
+    multiClassClassifierVsX(loadedClassifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "loadedVerification")
+
 
     sys.exit(1)
 

@@ -17,7 +17,7 @@ eventTypeDict = {
 }
 
 invertedEventTypeDict = {
-    0 : "Charged",
+    0 : "Signal",
     1 : "TT",
     2 : "DY",
     3 : "QCD",
