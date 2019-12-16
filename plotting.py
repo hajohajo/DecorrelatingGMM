@@ -124,14 +124,7 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
     binning = xBinning[variableName]
     width = binning[1]-binning[0]
 
-    # targetData['target'] = np.argmax(targetData['eventType'].values)==0
     targetData.loc[:, 'target'] = targetData.loc[:, 'eventType']
-
-    # sig = [inputData[targetData['eventType'] == 0]]
-    # bkgs = []
-    # for i in range(1, len(invertedEventTypeDict)):
-    #     bkgs.append(inputData[targetData['eventType'] == i])
-
 
     sig = [inputData.loc[targetData['eventType'] == 0]]
     bkgs = []
@@ -161,7 +154,7 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
         stdDev = stdDev[(binContent!=0)]
 
         plt.scatter(cleanedBinning+width/2, weightedBins, marker='.', label=labels[ind], color=colors[ind], alpha=0.7, linewidths=1.0, edgecolors='k')
-        if(len(weightedBins<2)):
+        if(len(weightedBins)<2):
             print(weightedBins)
         extended = np.append(np.insert(weightedBins, 0, weightedBins[0]-(weightedBins[1]-weightedBins[0])/2.0), weightedBins[-1]+(weightedBins[-1]-weightedBins[-2])/2.0)
         up = extended+np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
