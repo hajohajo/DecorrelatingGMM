@@ -73,6 +73,9 @@ def classifierVsX(classifier, inputData, targetData, variableName, variableData,
     binning = xBinning[variableName]
     width = binning[1]-binning[0]
 
+    # targetData['target'] = np.argmax(targetData['eventType'].values)==0
+    targetData['target'] = (targetData['eventType']==0)
+
     bkg = inputData[(targetData['target']==0)]
     sig = inputData[(targetData['target']==1)]
 
@@ -83,7 +86,9 @@ def classifierVsX(classifier, inputData, targetData, variableName, variableData,
     variableData = [variableData[(targetData['target'] == 1)], variableData[(targetData['target'] == 0)]]
     for data in samples:
         variable = variableData[ind]
-        predictions = classifier.predict(data.to_numpy()).reshape(variable.shape)
+        # predictions = classifier.predict(data.to_numpy())[0].reshape(variable.shape)
+        predictions = classifier.predict(data.to_numpy())
+        predictions = predictions[:, 0]
         binContent, _ = np.histogram(variable, bins=xBinning[variableName])
         weightedBins, _ = np.histogram(variable, bins=xBinning[variableName], weights=predictions)
         stdDev, _, _ = binned_statistic(variable, values=predictions, statistic='std', bins=xBinning[variableName])
