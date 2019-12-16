@@ -155,8 +155,9 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
 
         plt.scatter(cleanedBinning+width/2, weightedBins, marker='.', label=labels[ind], color=colors[ind], alpha=0.7, linewidths=1.0, edgecolors='k')
         if(len(weightedBins)<2):
-            print(weightedBins)
-        extended = np.append(np.insert(weightedBins, 0, weightedBins[0]-(weightedBins[1]-weightedBins[0])/2.0), weightedBins[-1]+(weightedBins[-1]-weightedBins[-2])/2.0)
+            extended = np.append(np.insert(weightedBins, 0, weightedBins[0] - width/2, weightedBins[0] + width /2))
+        else:
+            extended = np.append(np.insert(weightedBins, 0, weightedBins[0]-(weightedBins[1]-weightedBins[0])/2.0), weightedBins[-1]+(weightedBins[-1]-weightedBins[-2])/2.0)
         up = extended+np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
         down = extended-np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
         extendedBinning = np.append(np.insert(cleanedBinning+width/2, 0, cleanedBinning[0]), cleanedBinning[-1]+width)

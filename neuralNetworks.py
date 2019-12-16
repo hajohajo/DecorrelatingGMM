@@ -91,7 +91,7 @@ def createClassifier(means, scale):
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l1(0.0)
     _nodes = 1024
-    _numBlocks = 20
+    _numBlocks = 5
     _dropRate = 0.0
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
