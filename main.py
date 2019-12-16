@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 from utilities import createDirectories, readDatasetsToDataframes
 from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier, createMultiAdversary
 import pandas as pd
@@ -27,7 +29,7 @@ print(tf.executing_eagerly())
 def main():
     columns = COLUMNS
 
-    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+    baseUrl = "/work/hajohajo/TrainingFiles/"
     # signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
     # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
 
