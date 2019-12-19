@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 from utilities import createDirectories, readDatasetsToDataframes
 from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier, createMultiAdversary
 import pandas as pd
@@ -27,7 +29,9 @@ print(tf.executing_eagerly())
 def main():
     columns = COLUMNS
 
+    # baseUrl = "/work/hajohajo/TrainingFiles/"
     baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+
     # signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
     # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
 
@@ -44,6 +48,7 @@ def main():
     allData = signalDataset.append(backgroundDatasets, ignore_index=True)
     # allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
+    allData = allData.sample(n=20000).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
 #    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 
@@ -80,7 +85,9 @@ def main():
                                                                                         "swish" : swish})
     else:
         classifier = createMultiClassifier(means, scale);
-        classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-2),
+        classifier.compile(
+                            optimizer=tf.optimizers.Adam(learning_rate=1e-2),
+#                            optimizer=tf.optimizers.Adagrad(),
                             loss="categorical_crossentropy")
 
         classifier.save(classifierModelPath)
@@ -92,7 +99,7 @@ def main():
     chainedModel = createChainedModel(classifier, adversary)
     chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                          loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                         loss_weights=[1.0, 10.0])
+                         loss_weights=[1.0, 2.0])
 
     print(classifier.summary())
     print(adversary.summary())
@@ -123,7 +130,7 @@ def main():
                   batch_size=BATCHSIZE) #,
 
     chainedModel.fit(trainDataFrame.loc[:, COLUMNS].to_numpy(), [tf.keras.utils.to_categorical(trainDataFrame.loc[:,"eventType"].values), digitized],
-                     epochs=20,
+                     epochs=100,
                      batch_size=BATCHSIZE,
                      callbacks=[tensorboardCallback],
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
