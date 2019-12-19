@@ -15,7 +15,7 @@ xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "deltaPhiTauBjet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiBjetMet" : np.linspace(0.0, np.pi, 30),
 #            "TransverseMass" : np.linspace(0.0, 1000.0, 20)}
-            "TransverseMass": np.linspace(0.0, 300.0, 60)}
+            "TransverseMass": np.linspace(0.0, 200.0, 41)}
 
 xLabel = {"tauPt" : r"Tau p$_T$",
             "MET" : r"E$_{T, miss}$",
@@ -67,6 +67,48 @@ def createDistributionComparison(signal, background, columns):
     plt.savefig("plots/DistributionComparison.pdf")
     plt.clf()
 
+
+from scipy.spatial.distance import jensenshannon
+def jsdScores(classifier, inputData, targetData, variableData, postfix):
+    binning = xBinning["TransverseMass"]
+    width = binning[1] - binning[0]
+
+    chosenIndices = (targetData['eventType'] != 0).to_numpy()
+    bkg = inputData.loc[chosenIndices, :]
+    variableData = variableData[chosenIndices]
+
+    predictions = classifier.predict(bkg.to_numpy())[:, 0]
+
+    grid = np.linspace(0.0, 1.0, 21)
+    print(grid)
+
+    jseValues = []
+    binnedAll, _, _ = plt.hist(variableData, binning)
+    for threshold in grid:
+        passes = (predictions >= threshold)
+
+        dataToBin = variableData[passes]
+        binnedSample, _, _ = plt.hist(dataToBin, binning)
+
+        if(np.sum(binnedSample)==0.0):
+            jseValues.append(1.0)
+            continue
+
+
+        jse = jensenshannon(binnedAll, binnedSample)
+        jseValues.append(np.square(jse))
+
+    print(binning)
+    print(len(binning))
+    print(len(jseValues))
+    gridWidth = grid[1]-grid[0]
+    plt.clf()
+    plt.scatter(grid, jseValues, marker='.', alpha=0.7, linewidths=1.0, edgecolors='k')
+    plt.title("JSD scores for different DNN cut values")
+    plt.xlabel("DNN cut value")
+    plt.ylabel("JSD value")
+    plt.savefig("plots/jsdScores"+postfix+'.pdf')
+    plt.clf()
 
 #Assumes: Even bin widths
 from scipy.stats import binned_statistic
