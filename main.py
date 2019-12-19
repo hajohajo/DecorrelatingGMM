@@ -8,7 +8,7 @@ from sklearn.utils import compute_sample_weight
 from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE, PRETRAINEPOCHS
 
 from sklearn.model_selection import train_test_split
-from plotting import classifierVsX, multiClassClassifierVsX, jsdScores
+from plotting import classifierVsX, multiClassClassifierVsX, jsdScores, jsdScoresMulti
 
 import numpy as np
 import tensorflow as tf
@@ -122,7 +122,7 @@ def main():
                    epochs=PRETRAINEPOCHS,
                    validation_data=validationDataset)
 
-    jsdScores(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
+    jsdScoresMulti(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
     multiClassClassifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
     classifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
 
@@ -142,7 +142,7 @@ def main():
 
     classifier.save("models/classifier.h5")
 
-    jsdScores(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "After")
+    jsdScoresMulti(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "After")
     multiClassClassifierVsX(classifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
     classifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "AfterAllBkgs")
 

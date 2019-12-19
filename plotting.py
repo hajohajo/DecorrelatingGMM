@@ -78,9 +78,7 @@ def jsdScores(classifier, inputData, targetData, variableData, postfix):
     variableData = variableData[chosenIndices]
 
     predictions = classifier.predict(bkg.to_numpy())[:, 0]
-
     grid = np.linspace(0.0, 1.0, 21)
-    print(grid)
 
     jseValues = []
     binnedAll, _, _ = plt.hist(variableData, binning)
@@ -98,10 +96,6 @@ def jsdScores(classifier, inputData, targetData, variableData, postfix):
         jse = jensenshannon(binnedAll, binnedSample)
         jseValues.append(np.square(jse))
 
-    print(binning)
-    print(len(binning))
-    print(len(jseValues))
-    gridWidth = grid[1]-grid[0]
     plt.clf()
     plt.scatter(grid, jseValues, marker='.', alpha=0.7, linewidths=1.0, edgecolors='k')
     plt.title("JSD scores for different DNN cut values")
@@ -109,6 +103,57 @@ def jsdScores(classifier, inputData, targetData, variableData, postfix):
     plt.ylabel("JSD value")
     plt.savefig("plots/jsdScores"+postfix+'.pdf')
     plt.clf()
+
+def jsdScoresMulti(classifier, inputData, targetData, variableData, postfix):
+    binning = xBinning["TransverseMass"]
+    width = binning[1]-binning[0]
+
+    targetData.loc[:, 'target'] = targetData.loc[:, 'eventType']
+    bkgs = []
+    for i in range(1, len(invertedEventTypeDict)):
+        bkgs.append(inputData.loc[targetData['eventType'] == i])
+
+    labels = [invertedEventTypeDict[x] for x in range(0, len(invertedEventTypeDict))]
+    colors = [sns.xkcd_rgb["teal"], sns.xkcd_rgb["crimson"], 'k','b','r','gray','y']
+    ind = 1
+    variableData = [variableData.loc[(targetData['target'] == x)] for x in range(0, len(invertedEventTypeDict))]
+    grid = np.linspace(0.0, 1.0, 21)
+
+    for data in bkgs:
+        if(data.empty or data.shape[0]==1):
+            ind += 1
+            continue
+        variable = variableData[ind]
+        predictions = classifier.predict(data.to_numpy())
+        predictions = predictions[:, 0]
+
+
+        jseValues = []
+        binnedAll, _= np.histogram(variable, binning)
+        for threshold in grid:
+            passes = (predictions >= threshold)
+
+            dataToBin = variable[passes]
+            binnedSample, _ = np.histogram(dataToBin, binning)
+
+            if(np.sum(binnedSample)==0.0):
+                jseValues.append(1.0)
+                continue
+
+
+            jse = jensenshannon(binnedAll, binnedSample)
+            jseValues.append(np.square(jse))
+
+        plt.scatter(grid, jseValues, s=120, marker='.', alpha=0.7, linewidths=1.0, color=colors[ind], label=labels[ind], edgecolors='k')
+        ind += 1
+
+    plt.title("JSD scores for different DNN cut values")
+    plt.xlabel("DNN cut value")
+    plt.ylabel("JSD value")
+    plt.legend()
+    plt.savefig("plots/jsdScoresMulti"+postfix+'.pdf')
+    plt.clf()
+
 
 #Assumes: Even bin widths
 from scipy.stats import binned_statistic
@@ -198,7 +243,7 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
 
 
         # plt.errorbar(cleanedBinning+width/2, weightedBins, yerr=stdDev, marker='.', label=labels[ind], color=colors[ind], alpha=0.7)
-        plt.scatter(cleanedBinning+width/2, weightedBins, marker='.', label=labels[ind], color=colors[ind], alpha=0.7, linewidths=1.0, edgecolors='k')
+        plt.scatter(cleanedBinning+width/2, weightedBins, s=100, marker='.', label=labels[ind], color=colors[ind], alpha=0.7, linewidths=1.0, edgecolors='k')
         if(len(weightedBins)<2):
             extended = np.append(np.insert(weightedBins, 0, weightedBins[0] - width/2), weightedBins[0] + width /2)
         else:
