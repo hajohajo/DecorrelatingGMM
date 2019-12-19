@@ -14,7 +14,8 @@ xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "deltaPhiTauMet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiTauBjet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiBjetMet" : np.linspace(0.0, np.pi, 30),
-            "TransverseMass" : np.linspace(0.0, 1000.0, 20)} #np.linspace(0.0, 600.0, 100)}
+#            "TransverseMass" : np.linspace(0.0, 1000.0, 20)}
+            "TransverseMass": np.linspace(0.0, 300.0, 60)}
 
 xLabel = {"tauPt" : r"Tau p$_T$",
             "MET" : r"E$_{T, miss}$",
@@ -153,6 +154,8 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
         stdDev[(binContent==1)] = 1.0
         stdDev = stdDev[(binContent!=0)]
 
+
+        # plt.errorbar(cleanedBinning+width/2, weightedBins, yerr=stdDev, marker='.', label=labels[ind], color=colors[ind], alpha=0.7)
         plt.scatter(cleanedBinning+width/2, weightedBins, marker='.', label=labels[ind], color=colors[ind], alpha=0.7, linewidths=1.0, edgecolors='k')
         if(len(weightedBins)<2):
             extended = np.append(np.insert(weightedBins, 0, weightedBins[0] - width/2), weightedBins[0] + width /2)
@@ -161,10 +164,11 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
         up = extended+np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
         down = extended-np.append(np.insert(stdDev, 0, stdDev[0]),stdDev[-1])
         extendedBinning = np.append(np.insert(cleanedBinning+width/2, 0, cleanedBinning[0]), cleanedBinning[-1]+width)
-        plt.plot(extendedBinning, up, color=colors[ind], alpha=0.6, linewidth=0.3)
-        plt.plot(extendedBinning, down, color=colors[ind], alpha=0.6, linewidth=0.3)
+
+        plt.plot(extendedBinning, up, color=colors[ind], alpha=0.8, linewidth=0.6)
+        plt.plot(extendedBinning, down, color=colors[ind], alpha=0.8, linewidth=0.6)
         # plt.fill_between(extendedBinning, up, down, label="$\pm 1\sigma$", alpha=0.6, color=colors[ind])
-        plt.fill_between(extendedBinning, up, down, alpha=0.3, color=colors[ind])
+        # plt.fill_between(extendedBinning, up, down, alpha=0.3, color=colors[ind])
         ind += 1
 
     plt.grid(zorder=0)

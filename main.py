@@ -48,11 +48,12 @@ def main():
     allData = signalDataset.append(backgroundDatasets, ignore_index=True)
     # allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
-    allData = allData.sample(n=20000).reset_index(drop=True)
     allData["logPt"] = np.log(allData["tauPt"].copy().values)
 #    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 
-    trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.1)
+    trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.5)
+    trainDataFrame = trainDataFrame.sample(n=20000).reset_index(drop=True)
+
 
     scaler = StandardScaler().fit(trainDataFrame[COLUMNS])
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
@@ -121,6 +122,7 @@ def main():
                    epochs=PRETRAINEPOCHS,
                    validation_data=validationDataset)
     multiClassClassifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
+    classifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
 
     advInput = classifier.predict(trainDataFrame.loc[:, COLUMNS].to_numpy())
 
@@ -139,6 +141,8 @@ def main():
     classifier.save("models/classifier.h5")
 
     multiClassClassifierVsX(classifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
+    classifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "AfterAllBkgs")
+
 
     loadedClassifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,
                                                                                         "swish" : swish})
