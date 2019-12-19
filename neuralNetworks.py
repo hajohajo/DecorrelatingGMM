@@ -66,8 +66,8 @@ def createMultiClassifier(means, scale):
     _activation = swish #'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l1(0.0)
-    _nodes = 1024
-    _numBlocks = 20
+    _nodes = 64
+    _numBlocks = 5
     _dropRate = 0.0
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
@@ -75,6 +75,7 @@ def createMultiClassifier(means, scale):
 
     for i in range(_numBlocks):
         _name = "classifierDense"+str(i+1)
+        print(_name)
         x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization,
                                kernel_regularizer=_regularizer, name=_name)(x)
         x = keras.layers.BatchNormalization()(x)
@@ -147,7 +148,7 @@ def createChainedModel_v3(classifier, adversary, gamma):
 from utilities import invertedEventTypeDict
 def createMultiAdversary():
     event_shape = [1]
-    numberOfGaussians = 20
+    numberOfGaussians = 10
 
 
     params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
@@ -156,7 +157,7 @@ def createMultiAdversary():
     _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
     # auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
     # x = keras.layers.Concatenate()([inputs, auxiliary])
-    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden')(_inputs) #(x)
+    x = keras.layers.Dense(32, activation='relu', kernel_initializer='glorot_normal', name='hidden')(_inputs) #(x)
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
