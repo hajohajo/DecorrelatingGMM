@@ -66,8 +66,8 @@ def createMultiClassifier(means, scale):
     _activation = swish #'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l1(0.0)
-    _nodes = 1024
-    _numBlocks = 5
+    _nodes = 128
+    _numBlocks = 100
     _dropRate = 0.0
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")

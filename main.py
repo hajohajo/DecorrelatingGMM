@@ -80,7 +80,7 @@ def main():
                                                                                         "swish" : swish})
     else:
         classifier = createMultiClassifier(means, scale);
-        classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+        classifier.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-2),
                             loss="categorical_crossentropy")
 
         classifier.save(classifierModelPath)
