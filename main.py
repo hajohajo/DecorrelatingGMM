@@ -1,6 +1,6 @@
 import matplotlib
 matplotlib.use('Agg')
-from utilities import createDirectories, readDatasetsToDataframes, clipDataFrameToQuantiles
+from utilities import createDirectories, readDatasetsToDataframes, quantileClipper
 from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier, createMultiAdversary
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -51,21 +51,21 @@ def main():
     createDirectories()
 
     allData = signalDataset.append(backgroundDatasets, ignore_index=True)
-    # allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
-    allData["logPt"] = np.log(allData["tauPt"].copy().values)
-#    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
-#    allData['TransverseMassClipped'] = np.clip(allData['TransverseMass'].values, PTMIN, PTMAX)
-    allData['TransverseMassClipped'] = np.clip(allData['TransverseMass'].values, PTMIN, PTMAX)
 
     trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.2)
 #    trainDataFrame = trainDataFrame.sample(n=20000).reset_index(drop=True)
 
-    # COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMassClipped"]
     COLUMNS = COLUMNS_
 
-    scaler = StandardScaler().fit(trainDataFrame[COLUMNS])
-    scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
+    clipper = quantileClipper(lowerQuantile=0.2, upperQuantile=0.8)
+    clipper.fit(trainDataFrame)
+
+    trainDataFrame['logPt'] = np.log(clipper.clip(trainDataFrame).loc[:, "tauPt"])
+    testDataFrame['logPt'] = np.log(clipper.clip(testDataFrame).loc[:, "tauPt"])
+
+    # scaler = StandardScaler().fit(trainDataFrame[COLUMNS])
+    # scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
 
     sampleWeights_classifier = np.ones(trainDataFrame.shape[0])
     sampleWeights_adversary = np.ones(trainDataFrame.shape[0])
@@ -74,12 +74,8 @@ def main():
     sampleWeights_classifier[trainDataFrame.eventType != 0] = compute_sample_weight('balanced', digitized[trainDataFrame.eventType != 0])
     sampleWeights_adversary[trainDataFrame.eventType == 0] = 0
 
-    print("Sample weights:")
-    print(sampleWeights_adversary)
     sampleWeights_adversary = np.multiply(sampleWeights_classifier, sampleWeights_adversary)
-    print(sampleWeights_adversary)
 
-    print(tf.keras.utils.to_categorical(trainDataFrame["eventType"].values))
     trainDataTargets = tf.keras.utils.to_categorical(trainDataFrame["eventType"].values)
 
     # trainDataset = tf.data.Dataset.from_tensor_slices((trainDataFrame[COLUMNS].values, trainDataFrame['target'].values, sampleWeights_classifier))
@@ -102,7 +98,7 @@ def main():
             classifier = tf.keras.models.load_model(classifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
                                                                                         "swish" : swish})
         else:
-            classifier = createMultiClassifier(means, scale);
+            classifier = createMultiClassifier() #(means, scale)
             classifier.compile(
                                 optimizer=tf.optimizers.Adam(learning_rate=1e-3),
 #                                optimizer=tf.optimizers.Adagrad(),
@@ -140,24 +136,25 @@ def main():
     sampleWeights_adversary=np.array(sampleWeights_adversary)
 
     if not USEPRETRAINED:
-        classifier.fit(trainDataset,
+        classifier.fit(clipper.clip(trainDataFrame[COLUMNS]).to_numpy(), trainDataTargets,   #trainDataset,
                        epochs=PRETRAINEPOCHS,
+                       batch_size=BATCHSIZE,
                        validation_data=validationDataset)
 
         classifier.save("models/classifier"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
 
-    jsdScoresMulti(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
-    multiClassClassifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
-    classifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
+    jsdScoresMulti(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
+    multiClassClassifierVsX(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
+    classifierVsX(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
 
-    advInput = classifier.predict(clipDataFrameToQuantiles(trainDataFrame.loc[:, COLUMNS]).to_numpy())
+    advInput = classifier.predict(clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy())
 
-    adversary.fit([advInput, clipDataFrameToQuantiles(trainDataFrame.loc[:, "logPt"]).to_numpy()], digitized,
+    adversary.fit([advInput, trainDataFrame.loc[:, "logPt"].to_numpy()], digitized,
                   epochs=PRETRAINEPOCHS,
                   sample_weight=sampleWeights_adversary,
                   batch_size=BATCHSIZE) #,
 
-    chainedModel.fit([clipDataFrameToQuantiles(trainDataFrame.loc[:, COLUMNS]).to_numpy(), clipDataFrameToQuantiles(trainDataFrame.loc[:, "logPt"]).to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:, "eventType"].values), digitized],
+    chainedModel.fit([clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy(), trainDataFrame.loc[:, "logPt"].to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:, "eventType"].values), digitized],
                      epochs=TRAINEPOCHS,
                      batch_size=BATCHSIZE,
                      callbacks=[tensorboardCallback],
@@ -166,9 +163,9 @@ def main():
 
     classifier.save("models/classifier.h5")
 
-    jsdScoresMulti(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, testDataFrame.loc[:, "TransverseMass"], "After")
-    multiClassClassifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:, COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
-    classifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "AfterAllBkgs")
+    jsdScoresMulti(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, testDataFrame.loc[:, "TransverseMass"], "After")
+    multiClassClassifierVsX(classifier, clipper.clip(testDataFrame.loc[:, COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
+    classifierVsX(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "AfterAllBkgs")
 
 
     # loadedClassifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,

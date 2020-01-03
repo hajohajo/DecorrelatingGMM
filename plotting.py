@@ -226,7 +226,7 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
     variableData = [variableData.loc[(targetData['target'] == x)] for x in range(0, len(invertedEventTypeDict))]
 
     for data in samples:
-        if(data.empty or data.shape[0]==1):
+        if(data.empty or data.shape[0] < 500):
             ind += 1
             continue
         variable = variableData[ind]

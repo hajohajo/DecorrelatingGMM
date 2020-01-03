@@ -63,7 +63,7 @@ beta = tf.Variable(initial_value=1.0, trainable=True, name='swish_beta')
 def altSwish(x):
     return x * tf.nn.sigmoid(beta*x)
 
-def createMultiClassifier(means, scale):
+def createMultiClassifier(): #(means, scale):
     _activation = swish #'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l2(1e-6)

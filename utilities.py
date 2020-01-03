@@ -11,6 +11,22 @@ def clipDataFrameToQuantiles(dataframe, lowerQuantile=0.2, upperQuantile=0.8):
     returnFrame = dataframe.clip(dataframe.quantile(lowerQuantile), dataframe.quantile(upperQuantile))
     return returnFrame
 
+class quantileClipper():
+    def __init__(self, lowerQuantile=0.1, upperQuantile=0.9):
+        self.lowerQuantile = lowerQuantile
+        self.upperQuantile = upperQuantile
+        self.fitCalled = False
+
+    def fit(self, dataframe):
+        self.fitCalled = True
+        self.lowerThresholds = dataframe.quantile(self.lowerQuantile)
+        self.upperThresholds = dataframe.quantile(self.upperQuantile)
+
+    def clip(self, dataframe):
+        newDataframe = dataframe.clip(self.lowerThresholds, self.upperThresholds, axis=1)
+        return newDataframe
+
+
 eventTypeDict = {
     "ChargedHiggs_" : 0,
     "TT_" : 1,
