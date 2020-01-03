@@ -5,7 +5,7 @@ from neuralNetworks import createChainedModel_v3, createClassifier, createAdvers
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils import compute_sample_weight
-from hyperOptimization import COLUMNS, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE, PRETRAINEPOCHS
+from hyperOptimization import COLUMNS_, PTMIN, PTMAX, PTBINS, BATCHSIZE, TESTSET_SIZE, PRETRAINEPOCHS
 
 from sklearn.model_selection import train_test_split
 from plotting import classifierVsX, multiClassClassifierVsX, jsdScores, jsdScoresMulti
@@ -26,11 +26,16 @@ tf.random.set_seed(13)
 
 print(tf.executing_eagerly())
 
-def main():
-    columns = COLUMNS
+TRAINEPOCHS=100
+USEPRETRAINED = True
+#pretrainedClassifierModelPath = "./models/classifier20191220-111214.h5"
+pretrainedClassifierModelPath = "./models/classifierSaved.h5"
 
-    # baseUrl = "/work/hajohajo/TrainingFiles/"
-    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+def main():
+    columns = COLUMNS_
+
+    baseUrl = "/work/hajohajo/TrainingFiles/"
+    #baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
 
     # signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
     # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
@@ -48,12 +53,16 @@ def main():
     allData = signalDataset.append(backgroundDatasets, ignore_index=True)
     # allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
-    allData["logPt"] = np.log(allData["tauPt"].copy().values)
+    allData["logPt"] = np.clip(np.log(allData["tauPt"].copy().values), PTMIN, PTMAX)
 #    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
+#    allData['TransverseMassClipped'] = np.clip(allData['TransverseMass'].values, PTMIN, PTMAX)
+    allData['TransverseMassClipped'] = np.clip(allData['TransverseMass'].values, PTMIN, PTMAX)
 
-    trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.5)
-    trainDataFrame = trainDataFrame.sample(n=20000).reset_index(drop=True)
+    trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.2)
+#    trainDataFrame = trainDataFrame.sample(n=20000).reset_index(drop=True)
 
+    COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMassClipped"]
+#    COLUMNS = COLUMNS_
 
     scaler = StandardScaler().fit(trainDataFrame[COLUMNS])
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
@@ -64,6 +73,11 @@ def main():
     digitized = np.digitize(np.clip(trainDataFrame['TransverseMass'].values, PTMIN, PTMAX-1.0), bins=binning, right=False).astype(np.float32)
     sampleWeights_classifier[trainDataFrame.eventType != 0] = compute_sample_weight('balanced', digitized[trainDataFrame.eventType != 0])
     sampleWeights_adversary[trainDataFrame.eventType == 0] = 0
+
+    print("Sample weights:")
+    print(sampleWeights_adversary)
+    sampleWeights_adversary = np.multiply(sampleWeights_classifier, sampleWeights_adversary)
+    print(sampleWeights_adversary)
 
     print(tf.keras.utils.to_categorical(trainDataFrame["eventType"].values))
     trainDataTargets = tf.keras.utils.to_categorical(trainDataFrame["eventType"].values)
@@ -80,27 +94,34 @@ def main():
     testDataset = tf.data.Dataset.from_tensor_slices((testDataFrame[COLUMNS].values, testDataFrame['eventType'].values))
     testDataset = testDataset.batch(BATCHSIZE, drop_remainder=True)
 
-    classifierModelPath = "./models/classifierBeforeTraining.h5"
-    if(os.path.exists(classifierModelPath)):
-        classifier = tf.keras.models.load_model(classifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
-                                                                                        "swish" : swish})
-    else:
-        classifier = createMultiClassifier(means, scale);
-        classifier.compile(
-                            optimizer=tf.optimizers.Adam(learning_rate=1e-2),
-#                            optimizer=tf.optimizers.Adagrad(),
-                            loss="categorical_crossentropy")
 
-        classifier.save(classifierModelPath)
+    if not USEPRETRAINED:
+        classifierModelPath = "./models/classifierBeforeTraining.h5"
+    #    if(os.path.exists(classifierModelPath)):
+        if(1==0):
+            classifier = tf.keras.models.load_model(classifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
+                                                                                        "swish" : swish})
+        else:
+            classifier = createMultiClassifier(means, scale);
+            classifier.compile(
+                                optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+#                                optimizer=tf.optimizers.Adagrad(),
+                                loss="categorical_crossentropy")
+
+            classifier.save(classifierModelPath)
+
+    else:
+        classifier = tf.keras.models.load_model(pretrainedClassifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
+                                                                                        "swish" : swish})
 
     adversary = createMultiAdversary()
     adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                      loss=lambda y, model: -model.log_prob(y+1e-8))
+                      loss=lambda y, model: -model.log_prob(y+1e-6))
 
     chainedModel = createChainedModel(classifier, adversary)
-    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                         loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-8)],
-                         loss_weights=[1.0, 2.0])
+    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-5),
+                         loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-6)],
+                         loss_weights=[1.0, 20.0])
 
     print(classifier.summary())
     print(adversary.summary())
@@ -118,9 +139,12 @@ def main():
     sampleWeights_classifier=np.array(sampleWeights_classifier)
     sampleWeights_adversary=np.array(sampleWeights_adversary)
 
-    classifier.fit(trainDataset,
-                   epochs=PRETRAINEPOCHS,
-                   validation_data=validationDataset)
+    if not USEPRETRAINED:
+        classifier.fit(trainDataset,
+                       epochs=PRETRAINEPOCHS,
+                       validation_data=validationDataset)
+
+        classifier.save("models/classifier"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
 
     jsdScoresMulti(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
     multiClassClassifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
@@ -128,13 +152,13 @@ def main():
 
     advInput = classifier.predict(trainDataFrame.loc[:, COLUMNS].to_numpy())
 
-    adversary.fit(advInput, digitized,
+    adversary.fit([advInput, trainDataFrame.loc[:, "logPt"].to_numpy()], digitized,
                   epochs=PRETRAINEPOCHS,
                   sample_weight=sampleWeights_adversary,
                   batch_size=BATCHSIZE) #,
 
-    chainedModel.fit(trainDataFrame.loc[:, COLUMNS].to_numpy(), [tf.keras.utils.to_categorical(trainDataFrame.loc[:,"eventType"].values), digitized],
-                     epochs=100,
+    chainedModel.fit([trainDataFrame.loc[:, COLUMNS].to_numpy(), trainDataFrame.loc[:, "logPt"].to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:,"eventType"].values), digitized],
+                     epochs=TRAINEPOCHS,
                      batch_size=BATCHSIZE,
                      callbacks=[tensorboardCallback],
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
@@ -154,9 +178,6 @@ def main():
 
 
     sys.exit(1)
-
-    jsdMetric = JSDMetric(classifierCut=0.5,
-                          validation_data=(allData.sample(frac=0.1), train_target['target'].sample(frac=0.1)))
 
 
 if __name__ == "__main__":

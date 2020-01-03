@@ -8,16 +8,16 @@ HP_DROPOUT = hp.HParam("dropout", hp.RealInterval(0.1, 0.4)) # 0.3))
 HP_OPTIMIZER = hp.HParam("opimizer", hp.Discrete(['adam'])) #, 'sgd']))
 HP_ACTIVATION = hp.HParam("activation", hp.Discrete(['elu', 'selu']))#['relu', 'elu', 'selu']))
 METRIC_ACCURACY = "accuracy"
-BATCHSIZE = 1024 #1024
+BATCHSIZE = 1024
 
-PTBINS = 60
+PTBINS = 15
 PTMIN = 0.0
-PTMAX = 200.0
+PTMAX = 150.0
 TESTSET_SIZE = 10000
 
-PRETRAINEPOCHS=100
+PRETRAINEPOCHS=5
 
-COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
+COLUMNS_ = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
 #COLUMNS= ["tauPt", "TransverseMass"]
 
 def run(run_dir, hparams, train_data, test_data):

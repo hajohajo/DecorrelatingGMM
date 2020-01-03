@@ -2,10 +2,11 @@ from tensorflow import keras
 from tensorflow.keras.activations import sigmoid
 import tensorflow_probability as tfp
 import tensorflow as tf
-from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS, COLUMNS, TESTSET_SIZE
+from hyperOptimization import HP_NUM_UNITS, HP_DROPOUT, HP_OPTIMIZER, HP_NUM_HIDDEN_LAYERS, HP_ACTIVATION, BATCHSIZE, PTBINS, COLUMNS_, TESTSET_SIZE
 import math
 import numpy as np
 
+COLUMNS = COLUMNS_
 
 #Performs the work of the sklearn StandardScaler. Requires the feature means and scales as input, but
 #after that the values are store here for the easy deployment of the model.
@@ -65,13 +66,15 @@ def altSwish(x):
 def createMultiClassifier(means, scale):
     _activation = swish #'relu'
     _initialization = 'glorot_normal'
-    _regularizer = keras.regularizers.l1(0.0)
+    _regularizer = keras.regularizers.l2(1e-6)
     _nodes = 64
     _numBlocks = 5
-    _dropRate = 0.0
+    _dropRate = 0.05
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
-    x = StandardScalerLayer(means, scale)(_inputs)
+    x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization,
+                               kernel_regularizer=_regularizer, name="classifierDense_dummy")(_inputs)
+#    x = StandardScalerLayer(means, scale)(_inputs)
 
     for i in range(_numBlocks):
         _name = "classifierDense"+str(i+1)
@@ -120,7 +123,7 @@ def JensenShannonDivergence(y_true, y_pred):
 def gradReverse(x): #, gamma=1.0):
     y = tf.identity(x)
     def custom_gradient(dy):
-        return -100*dy
+        return -20.0*dy
     return y, custom_gradient
 
 class GradReverse(tf.keras.layers.Layer):
@@ -133,8 +136,8 @@ class GradReverse(tf.keras.layers.Layer):
 
 def createChainedModel(classifier, adversary):
     x = GradReverse()(classifier.output)
-    full_output = adversary(x)
-    model = tf.keras.Model(inputs=classifier.input, outputs=[classifier.output, full_output]) #adversary(x)])
+    full_output = adversary([x, adversary.input[1]])
+    model = tf.keras.Model(inputs=[classifier.input, adversary.input[1]], outputs=[classifier.output, full_output]) #adversary(x)])
     return model
 
 def createChainedModel_v3(classifier, adversary, gamma):
@@ -155,14 +158,15 @@ def createMultiAdversary():
                                                               component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
 
     _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
-    # auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-    # x = keras.layers.Concatenate()([inputs, auxiliary])
-    x = keras.layers.Dense(32, activation='relu', kernel_initializer='glorot_normal', name='hidden')(_inputs) #(x)
+    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
+    x = keras.layers.Concatenate()([_inputs, auxiliary])
+    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden1')(x)
+#    x = keras.layers.Dense(64, activation=swish, kernel_initializer='glorot_normal', name='hidden2')(x)
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
-    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
-    # model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
+#    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
+    model = keras.Model(inputs=[_inputs, auxiliary], outputs=out, name="Adversary")
 
     return model
 
@@ -182,8 +186,8 @@ def createAdversary():
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
-    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
-    # model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
+#    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
+    model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")
 
     return model
 

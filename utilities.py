@@ -1,7 +1,7 @@
 import os
 import shutil
 from root_pandas import read_root
-from hyperOptimization import COLUMNS
+from hyperOptimization import COLUMNS_
 import glob
 
 eventTypeDict = {
@@ -31,7 +31,7 @@ def readDatasetsToDataframes(pathToFolder):
     identifiers = ["ChargedHiggs_", "TT_", "DYJets", "QCD_", "ST_", "WJets", "WW", "WZ", "ZZ"]
     for identifier in identifiers:
         filePaths = glob.glob(pathToFolder + identifier+"*.root")
-        dataset = read_root(filePaths, columns=COLUMNS)
+        dataset = read_root(filePaths, columns=COLUMNS_)
         dataset["eventType"] = eventTypeDict[identifier]
         listOfDatasets.append(dataset)
 

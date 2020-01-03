@@ -14,8 +14,8 @@ xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "deltaPhiTauMet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiTauBjet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiBjetMet" : np.linspace(0.0, np.pi, 30),
-#            "TransverseMass" : np.linspace(0.0, 1000.0, 20)}
-            "TransverseMass": np.linspace(0.0, 200.0, 41)}
+            "TransverseMass" : np.linspace(0.0, 500.0, 101)}
+#            "TransverseMass": np.linspace(200.0, 300.0, 21)}
 
 xLabel = {"tauPt" : r"Tau p$_T$",
             "MET" : r"E$_{T, miss}$",
@@ -144,7 +144,7 @@ def jsdScoresMulti(classifier, inputData, targetData, variableData, postfix):
             jse = jensenshannon(binnedAll, binnedSample)
             jseValues.append(np.square(jse))
 
-        plt.scatter(grid, jseValues, s=120, marker='.', alpha=0.7, linewidths=1.0, color=colors[ind], label=labels[ind], edgecolors='k')
+        plt.scatter(grid, jseValues, s=120, marker='.', alpha=0.7, linewidths=1.0, color=colors[ind], label=labels[ind]+", "+str(data.shape[0]), edgecolors='k')
         ind += 1
 
     plt.title("JSD scores for different DNN cut values")
