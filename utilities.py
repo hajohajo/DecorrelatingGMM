@@ -4,6 +4,13 @@ from root_pandas import read_root
 from hyperOptimization import COLUMNS_
 import glob
 
+def clipDataFrameToQuantiles(dataframe, lowerQuantile=0.2, upperQuantile=0.8):
+    if(len(dataframe.shape) > 1):
+        returnFrame = dataframe.clip(dataframe.quantile(lowerQuantile), dataframe.quantile(upperQuantile), axis=1)
+        return returnFrame
+    returnFrame = dataframe.clip(dataframe.quantile(lowerQuantile), dataframe.quantile(upperQuantile))
+    return returnFrame
+
 eventTypeDict = {
     "ChargedHiggs_" : 0,
     "TT_" : 1,

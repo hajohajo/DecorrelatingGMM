@@ -120,7 +120,7 @@ def jsdScoresMulti(classifier, inputData, targetData, variableData, postfix):
     grid = np.linspace(0.0, 1.0, 21)
 
     for data in bkgs:
-        if(data.empty or data.shape[0]==1):
+        if(data.empty or data.shape[0]<500): #==1
             ind += 1
             continue
         variable = variableData[ind]

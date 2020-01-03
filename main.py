@@ -1,6 +1,6 @@
 import matplotlib
 matplotlib.use('Agg')
-from utilities import createDirectories, readDatasetsToDataframes
+from utilities import createDirectories, readDatasetsToDataframes, clipDataFrameToQuantiles
 from neuralNetworks import createChainedModel_v3, createClassifier, createAdversary, setTrainable, JSDMetric, GradientTapeCallBack, createChainedModel, StandardScalerLayer, swish, createMultiClassifier, createMultiAdversary
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -26,16 +26,16 @@ tf.random.set_seed(13)
 
 print(tf.executing_eagerly())
 
-TRAINEPOCHS=100
-USEPRETRAINED = True
+TRAINEPOCHS=1
+USEPRETRAINED = False
 #pretrainedClassifierModelPath = "./models/classifier20191220-111214.h5"
 pretrainedClassifierModelPath = "./models/classifierSaved.h5"
 
 def main():
     columns = COLUMNS_
 
-    baseUrl = "/work/hajohajo/TrainingFiles/"
-    #baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+    # baseUrl = "/work/hajohajo/TrainingFiles/"
+    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
 
     # signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
     # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
@@ -53,7 +53,7 @@ def main():
     allData = signalDataset.append(backgroundDatasets, ignore_index=True)
     # allData = allData[columns+["target"]]
     allData = allData.sample(frac=1.0).reset_index(drop=True)
-    allData["logPt"] = np.clip(np.log(allData["tauPt"].copy().values), PTMIN, PTMAX)
+    allData["logPt"] = np.log(allData["tauPt"].copy().values)
 #    allData["unscaledTransverseMass"] = allData["TransverseMass"].copy().values
 #    allData['TransverseMassClipped'] = np.clip(allData['TransverseMass'].values, PTMIN, PTMAX)
     allData['TransverseMassClipped'] = np.clip(allData['TransverseMass'].values, PTMIN, PTMAX)
@@ -61,8 +61,8 @@ def main():
     trainDataFrame, testDataFrame = train_test_split(allData, test_size=0.2)
 #    trainDataFrame = trainDataFrame.sample(n=20000).reset_index(drop=True)
 
-    COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMassClipped"]
-#    COLUMNS = COLUMNS_
+    # COLUMNS = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMassClipped"]
+    COLUMNS = COLUMNS_
 
     scaler = StandardScaler().fit(trainDataFrame[COLUMNS])
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
@@ -146,18 +146,18 @@ def main():
 
         classifier.save("models/classifier"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
 
-    jsdScoresMulti(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
-    multiClassClassifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
-    classifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
+    jsdScoresMulti(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, testDataFrame.loc[:, "TransverseMass"], "Before")
+    multiClassClassifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
+    classifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
 
-    advInput = classifier.predict(trainDataFrame.loc[:, COLUMNS].to_numpy())
+    advInput = classifier.predict(clipDataFrameToQuantiles(trainDataFrame.loc[:, COLUMNS]).to_numpy())
 
-    adversary.fit([advInput, trainDataFrame.loc[:, "logPt"].to_numpy()], digitized,
+    adversary.fit([advInput, clipDataFrameToQuantiles(trainDataFrame.loc[:, "logPt"]).to_numpy()], digitized,
                   epochs=PRETRAINEPOCHS,
                   sample_weight=sampleWeights_adversary,
                   batch_size=BATCHSIZE) #,
 
-    chainedModel.fit([trainDataFrame.loc[:, COLUMNS].to_numpy(), trainDataFrame.loc[:, "logPt"].to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:,"eventType"].values), digitized],
+    chainedModel.fit([clipDataFrameToQuantiles(trainDataFrame.loc[:, COLUMNS]).to_numpy(), clipDataFrameToQuantiles(trainDataFrame.loc[:, "logPt"]).to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:, "eventType"].values), digitized],
                      epochs=TRAINEPOCHS,
                      batch_size=BATCHSIZE,
                      callbacks=[tensorboardCallback],
@@ -166,15 +166,15 @@ def main():
 
     classifier.save("models/classifier.h5")
 
-    jsdScoresMulti(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, testDataFrame.loc[:, "TransverseMass"], "After")
-    multiClassClassifierVsX(classifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
-    classifierVsX(classifier, testDataFrame.loc[:,COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "AfterAllBkgs")
+    jsdScoresMulti(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, testDataFrame.loc[:, "TransverseMass"], "After")
+    multiClassClassifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:, COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "After")
+    classifierVsX(classifier, clipDataFrameToQuantiles(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "AfterAllBkgs")
 
 
-    loadedClassifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,
-                                                                                        "swish" : swish})
+    # loadedClassifier = tf.keras.models.load_model("models/classifier.h5", custom_objects={"StandardScalerLayer" : StandardScalerLayer,
+    #                                                                                     "swish" : swish})
 
-    multiClassClassifierVsX(loadedClassifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "loadedVerification")
+    # multiClassClassifierVsX(loadedClassifier, testDataFrame.loc[:, COLUMNS], testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "loadedVerification")
 
 
     sys.exit(1)
