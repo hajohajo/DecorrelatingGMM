@@ -1,8 +1,25 @@
 import os
 import shutil
 from root_pandas import read_root
-from hyperOptimization import COLUMNS_
+from hyperOptimization import COLUMNS_, PTMIN, PTMAX, PTBINS
 import glob
+import numpy as np
+from sklearn.utils import compute_sample_weight
+
+
+def getClassifierSampleWeights(dataframe):
+    weights = compute_sample_weight('balanced', dataframe.loc[:, "eventType"])
+
+    return weights
+
+def getAdversarySampleWeights(dataframe):
+    binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
+    digitizedSamples = np.digitize(np.clip(dataframe['TransverseMass'].values, PTMIN, PTMAX-1.0),
+                                   bins=binning, right=False).astype(np.float32)
+    weights = compute_sample_weight('balanced', digitizedSamples)
+    weights[dataframe.eventType == 0] = 0
+
+    return weights
 
 def clipDataFrameToQuantiles(dataframe, lowerQuantile=0.2, upperQuantile=0.8):
     if(len(dataframe.shape) > 1):
@@ -58,7 +75,14 @@ def readDatasetsToDataframes(pathToFolder):
         dataset["eventType"] = eventTypeDict[identifier]
         listOfDatasets.append(dataset)
 
-    return listOfDatasets[0], listOfDatasets[1:]
+    numberOfSignalEvents = listOfDatasets[0].shape[0]
+    numberOfBackgroundEvents = np.sum([x.shape[0] for x in listOfDatasets[1:]])
+    if(numberOfSignalEvents>numberOfBackgroundEvents):
+        listOfDatasets[0] = listOfDatasets[0].sample(n=numberOfBackgroundEvents)
+
+    dataframe = listOfDatasets[0].append(listOfDatasets[1:])
+
+    return dataframe
 
 def createDirectories():
     directories = ["plots", "logs"]

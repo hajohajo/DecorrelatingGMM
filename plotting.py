@@ -221,7 +221,7 @@ def multiClassClassifierVsX(classifier, inputData, targetData, variableName, var
 
     samples = sig+bkgs
     labels = [invertedEventTypeDict[x] for x in range(0, len(invertedEventTypeDict))]
-    colors = [sns.xkcd_rgb["teal"], sns.xkcd_rgb["crimson"], 'k','b','r','gray','y']
+    colors = [sns.xkcd_rgb["teal"], sns.xkcd_rgb["crimson"], 'k', 'b', 'r', 'gray','y']
     ind = 0
     variableData = [variableData.loc[(targetData['target'] == x)] for x in range(0, len(invertedEventTypeDict))]
 

@@ -15,7 +15,7 @@ PTMIN = 0.0
 PTMAX = 600.0
 TESTSET_SIZE = 10000
 
-PRETRAINEPOCHS=10
+PRETRAINEPOCHS=1
 
 COLUMNS_ = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
 #COLUMNS= ["tauPt", "TransverseMass"]
