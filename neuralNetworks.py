@@ -123,7 +123,7 @@ def JensenShannonDivergence(y_true, y_pred):
 def gradReverse(x): #, gamma=1.0):
     y = tf.identity(x)
     def custom_gradient(dy):
-        return -10.0*dy
+        return -50.0*dy
     return y, custom_gradient
 
 class GradReverse(tf.keras.layers.Layer):
@@ -152,19 +152,18 @@ def createChainedModel_v3(classifier, adversary, gamma):
 from utilities import invertedEventTypeDict
 def createMultiAdversary():
     event_shape = [1]
-    numberOfGaussians = 10
+    numberOfComponents = 20
 
-
-    params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
-                                                              component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
+    params_size = tfp.layers.MixtureNormal.params_size(numberOfComponents, event_shape)
+#    params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
+#                                                              component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
 
     _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
 #    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
 #    x = keras.layers.Concatenate()([_inputs, auxiliary])
-    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden1')(_inputs) #(x)
-#    x = keras.layers.Dense(64, activation=swish, kernel_initializer='glorot_normal', name='hidden2')(x)
+    x = keras.layers.Dense(64, activation="relu", kernel_initializer='glorot_normal', name='hidden1')(_inputs) #(x)
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
-    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
+    out = tfp.layers.MixtureNormal(numberOfComponents, event_shape, name="out_adversary")(x)
 
     model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
 #    model = keras.Model(inputs=[_inputs, auxiliary], outputs=out, name="Adversary")

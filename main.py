@@ -3,7 +3,7 @@ matplotlib.use('Agg')
 from utilities import createDirectories, readDatasetsToDataframes, quantileClipper, getClassifierSampleWeights, getAdversarySampleWeights
 from neuralNetworks import createChainedModel, StandardScalerLayer, swish, createMultiClassifier, createMultiAdversary
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from hyperOptimization import COLUMNS_, BATCHSIZE, PRETRAINEPOCHS, PTMIN, PTMAX, PTBINS
+from hyperOptimization import COLUMNS_, BATCHSIZE, PRETRAINEPOCHS, TRAINEPOCHS, PTMIN, PTMAX, PTBINS
 
 from sklearn.model_selection import train_test_split
 from plotting import classifierVsX, multiClassClassifierVsX, jsdScoresMulti
@@ -19,15 +19,14 @@ tf.random.set_seed(23)
 
 print(tf.executing_eagerly())
 
-TRAINEPOCHS=1
-#USEPRETRAINED = True
-USEPRETRAINED = False
+USEPRETRAINED = True
+#USEPRETRAINED = False
 pretrainedClassifierModelPath = "./models/classifierSaved.h5"
 pretrainedAdversaryModelPath = "./models/adversarySaved.h5"
 
 def main():
-    # baseUrl = "/work/hajohajo/TrainingFiles/"
-    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+    baseUrl = "/work/hajohajo/TrainingFiles/"
+    #baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
 
     dataframes = readDatasetsToDataframes(baseUrl)
     createDirectories()
@@ -44,8 +43,12 @@ def main():
     trainingInputPreprocessed.loc[:, COLUMNS_] = clipper.clip(trainingDF.loc[:, COLUMNS_])
     testInputPreprocessed.loc[:, COLUMNS_] = clipper.clip(testDF.loc[:, COLUMNS_])
     classifierTargets = tf.keras.utils.to_categorical(trainingInputPreprocessed.loc[:, "eventType"].values)
-    adversaryTargets = tf.keras.utils.to_categorical(np.digitize(np.clip(trainingInputPreprocessed.loc[:, "TransverseMass"], PTMIN, PTMAX-1.0),
-                                                                 bins=np.linspace(PTMIN, PTMAX, PTBINS+1)))
+#    adversaryTargets = tf.keras.utils.to_categorical(np.digitize(np.clip(trainingInputPreprocessed.loc[:, "TransverseMass"], PTMIN, PTMAX-1.0),
+#                                                                 bins=np.linspace(PTMIN, PTMAX, PTBINS+1)))
+#    adversaryTargets = np.array(np.digitize(np.clip(trainingInputPreprocessed.loc[:, "TransverseMass"], PTMIN, PTMAX-1.0),
+#                                                                 bins=np.linspace(PTMIN, PTMAX, PTBINS+1)), dtype=np.float32)
+    adversaryTargets = StandardScaler().fit_transform(trainingInputPreprocessed.loc[:,"TransverseMass"].to_numpy().reshape(-1, 1))
+    print(adversaryTargets[:5])
 
     scaler = StandardScaler().fit(trainingInputPreprocessed[COLUMNS_])
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
@@ -61,13 +64,18 @@ def main():
 
         adversary = createMultiAdversary()
         adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                          loss=lambda y, model: -model.log_prob(y+1e-6))
+                          loss=lambda y, model: -model.log_prob(y+1e-8))
 
         classifier.fit(trainingInputPreprocessed.loc[:, COLUMNS_].to_numpy(), classifierTargets,   #trainDataset,
                        epochs=PRETRAINEPOCHS,
                        batch_size=BATCHSIZE,
                        validation_split=0.1)
         classifier.save("models/classifier"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
+
+        jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "Before")
+        multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "Before")
+        classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "BeforeAllBkgs")
+
 
         adversaryInput = classifier.predict(trainingInputPreprocessed.loc[:, COLUMNS_].to_numpy())
         adversary.fit(adversaryInput, adversaryTargets,
@@ -80,15 +88,17 @@ def main():
     else:
         classifier = tf.keras.models.load_model(pretrainedClassifierModelPath,
                                                 custom_objects={"StandardScalerLayer": StandardScalerLayer, "swish": swish})
+
+        jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "Before")
+        multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "Before")
+        classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "BeforeAllBkgs")
+
+
         adversary = tf.keras.models.load_model(pretrainedAdversaryModelPath,
                                                custom_objects={'<lambda>': lambda y, model:-model.log_prob(y+1e-6)})
 
-    jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "Before")
-    multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "Before")
-    classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "BeforeAllBkgs")
-
     chainedModel = createChainedModel(classifier, adversary)
-    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-4),
+    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=5e-4, amsgrad=True),
                          loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-6)],
                          loss_weights=[1.0, 10.0])
 
@@ -111,11 +121,12 @@ def main():
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
                      # callbacks=[gradientTapeCallback, tensorboardCallback])
 
-    classifier.save("models/classifier.h5")
 
-    jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "After")
-    multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "After")
-    classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterAllBkgs")
+    classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterAllBkgsTest")
+    jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "AfterTest")
+    multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterTest")
+
+    classifier.save("models/classifier.h5")
 
 if __name__ == "__main__":
     main()
