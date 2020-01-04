@@ -123,7 +123,7 @@ def JensenShannonDivergence(y_true, y_pred):
 def gradReverse(x): #, gamma=1.0):
     y = tf.identity(x)
     def custom_gradient(dy):
-        return -20.0*dy
+        return -10.0*dy
     return y, custom_gradient
 
 class GradReverse(tf.keras.layers.Layer):
@@ -136,8 +136,9 @@ class GradReverse(tf.keras.layers.Layer):
 
 def createChainedModel(classifier, adversary):
     x = GradReverse()(classifier.output)
-    full_output = adversary([x, adversary.input[1]])
-    model = tf.keras.Model(inputs=[classifier.input, adversary.input[1]], outputs=[classifier.output, full_output]) #adversary(x)])
+#    full_output = adversary([x, adversary.input[1]])
+#    model = tf.keras.Model(inputs=[classifier.input, adversary.input[1]], outputs=[classifier.output, full_output]) #adversary(x)])
+    model = tf.keras.Model(inputs=classifier.input, outputs=[classifier.output, adversary(x)])
     return model
 
 def createChainedModel_v3(classifier, adversary, gamma):
@@ -158,15 +159,15 @@ def createMultiAdversary():
                                                               component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
 
     _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
-    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-    x = keras.layers.Concatenate()([_inputs, auxiliary])
-    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden1')(x)
+#    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
+#    x = keras.layers.Concatenate()([_inputs, auxiliary])
+    x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden1')(_inputs) #(x)
 #    x = keras.layers.Dense(64, activation=swish, kernel_initializer='glorot_normal', name='hidden2')(x)
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
     out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
-#    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
-    model = keras.Model(inputs=[_inputs, auxiliary], outputs=out, name="Adversary")
+    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
+#    model = keras.Model(inputs=[_inputs, auxiliary], outputs=out, name="Adversary")
 
     return model
 
@@ -184,7 +185,7 @@ def createAdversary():
     # x = keras.layers.Concatenate()([inputs, auxiliary])
     x = keras.layers.Dense(64, activation='relu', kernel_initializer='glorot_normal', name='hidden')(_inputs) #(x)
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
-    out = tfp.layers.MixtureNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
+    out = tfp.layers.IndependentNormal(numberOfGaussians, event_shape, name="out_adversary")(x)
 
 #    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
     model = keras.Model(inputs=[inputs, auxiliary], outputs=out, name="Adversary")

@@ -10,12 +10,12 @@ HP_ACTIVATION = hp.HParam("activation", hp.Discrete(['elu', 'selu']))#['relu', '
 METRIC_ACCURACY = "accuracy"
 BATCHSIZE = 1024
 
-PTBINS = 15
+PTBINS = 60
 PTMIN = 0.0
-PTMAX = 150.0
+PTMAX = 600.0
 TESTSET_SIZE = 10000
 
-PRETRAINEPOCHS=1
+PRETRAINEPOCHS=10
 
 COLUMNS_ = ["MET", "tauPt", "ldgTrkPtFrac", "deltaPhiTauMet", "deltaPhiTauBjet", "bjetPt", "deltaPhiBjetMet", "TransverseMass"]
 #COLUMNS= ["tauPt", "TransverseMass"]

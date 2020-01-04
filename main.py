@@ -21,21 +21,23 @@ from datetime import datetime
 
 from root_pandas import read_root
 
-tf.random.set_seed(13)
+tf.random.set_seed(23)
 #tf.compat.v1.disable_eager_execution()
 
 print(tf.executing_eagerly())
 
-TRAINEPOCHS=1
-USEPRETRAINED = False
+TRAINEPOCHS=1000
+USEPRETRAINED = True
+#USEPRETRAINED = False
 #pretrainedClassifierModelPath = "./models/classifier20191220-111214.h5"
 pretrainedClassifierModelPath = "./models/classifierSaved.h5"
+pretrainedAdversaryModelPath = "./models/adversarySaved.h5"
 
 def main():
     columns = COLUMNS_
 
-    # baseUrl = "/work/hajohajo/TrainingFiles/"
-    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
+    baseUrl = "/work/hajohajo/TrainingFiles/"
+#    baseUrl = "/Users/hajohajo/Documents/repos/TrainingFiles/"
 
     # signalFilePaths = glob.glob(baseUrl+"ChargedHiggs*.root")
     # backgroundFilePaths = list(set(glob.glob(baseUrl+"*.root")).difference(set(signalFilePaths)))
@@ -58,7 +60,7 @@ def main():
 
     COLUMNS = COLUMNS_
 
-    clipper = quantileClipper(lowerQuantile=0.2, upperQuantile=0.8)
+    clipper = quantileClipper(lowerQuantile=0.0, upperQuantile=1.0)
     clipper.fit(trainDataFrame)
 
     trainDataFrame['logPt'] = np.log(clipper.clip(trainDataFrame).loc[:, "tauPt"])
@@ -110,14 +112,35 @@ def main():
         classifier = tf.keras.models.load_model(pretrainedClassifierModelPath, custom_objects={"StandardScalerLayer" : StandardScalerLayer,
                                                                                         "swish" : swish})
 
-    adversary = createMultiAdversary()
-    adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                      loss=lambda y, model: -model.log_prob(y+1e-6))
+
+    def advLoss(model):
+        def loss(y_true, y_pred):
+            return lambda y_true, model:-model.log_prob(y_true+1e+6)
+
+    if not USEPRETRAINED:
+        adversaryModelPath = "./models/adversaryBeforeTraining.h5"
+
+        adversary = createMultiAdversary()
+        lossToUse = advLoss(adversary)
+        adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
+                          loss=lambda y, model: -model.log_prob(y+1e-6))
+#                        loss=lossToUse)
+        adversary.save(adversaryModelPath)
+
+    else:
+        adversary = tf.keras.models.load_model(pretrainedAdversaryModelPath, custom_objects = {'<lambda>': lambda y, model: -model.log_prob(y+1e-6)})
+
+#    print("Classifier weights:")
+#    for array in classifier.get_weights():
+#        print(np.isnan(array).any())
+#    print("Adversary weights:")
+#    for array in adversary.get_weights():
+#        print(np.isnan(array).any())
 
     chainedModel = createChainedModel(classifier, adversary)
-    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-5),
+    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-4),
                          loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-6)],
-                         loss_weights=[1.0, 20.0])
+                         loss_weights=[1.0, 10.0])
 
     print(classifier.summary())
     print(adversary.summary())
@@ -139,7 +162,7 @@ def main():
         classifier.fit(clipper.clip(trainDataFrame[COLUMNS]).to_numpy(), trainDataTargets,   #trainDataset,
                        epochs=PRETRAINEPOCHS,
                        batch_size=BATCHSIZE,
-                       validation_data=validationDataset)
+                       validation_split=0.1)
 
         classifier.save("models/classifier"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
 
@@ -147,17 +170,30 @@ def main():
     multiClassClassifierVsX(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "Before")
     classifierVsX(classifier, clipper.clip(testDataFrame.loc[:,COLUMNS]), testDataFrame, "TransverseMass", testDataFrame.loc[:, "TransverseMass"], "BeforeAllBkgs")
 
-    advInput = classifier.predict(clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy())
 
-    adversary.fit([advInput, trainDataFrame.loc[:, "logPt"].to_numpy()], digitized,
-                  epochs=PRETRAINEPOCHS,
-                  sample_weight=sampleWeights_adversary,
-                  batch_size=BATCHSIZE) #,
+    if not USEPRETRAINED:
+        advInput = classifier.predict(clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy())
 
-    chainedModel.fit([clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy(), trainDataFrame.loc[:, "logPt"].to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:, "eventType"].values), digitized],
+#    adversary.fit([advInput, trainDataFrame.loc[:, "logPt"].to_numpy()], digitized,
+        adversary.fit(advInput, digitized,
+                      epochs=PRETRAINEPOCHS,
+                      sample_weight=sampleWeights_adversary,
+                      batch_size=BATCHSIZE) #,
+        adversary.save("models/adversary"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
+
+#    chainedModel.fit([clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy(), trainDataFrame.loc[:, "logPt"].to_numpy()], [tf.keras.utils.to_categorical(trainDataFrame.loc[:, "eventType"].values), digitized],
+
+#    print("INPUT NULL")
+#    print(trainDataFrame.isnull().values.any())
+#    print(np.isnan(digitized).any())
+#    print(np.isnan(sampleWeights_adversary).any())
+#    print(trainDataFrame.loc[:5, COLUMNS])
+#    print(tf.keras.utils.to_categorical(trainDataFrame.loc[:5, "eventType"].values))
+#    print(digitized[:5])
+    chainedModel.fit(clipper.clip(trainDataFrame.loc[:, COLUMNS]).to_numpy(), [np.array(trainDataTargets), np.array(digitized)],
                      epochs=TRAINEPOCHS,
                      batch_size=BATCHSIZE,
-                     callbacks=[tensorboardCallback],
+#                     callbacks=[tensorboardCallback],
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
                      # callbacks=[gradientTapeCallback, tensorboardCallback])
 
