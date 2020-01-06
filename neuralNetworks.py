@@ -64,12 +64,12 @@ def altSwish(x):
     return x * tf.nn.sigmoid(beta*x)
 
 def createMultiClassifier(means, scale):
-    _activation = swish #'relu'
+    _activation = 'relu'
     _initialization = 'glorot_normal'
     _regularizer = keras.regularizers.l2(1e-6)
     _nodes = 64
     _numBlocks = 5
-    _dropRate = 0.05
+    _dropRate = 0.0
 
     _inputs = keras.Input(shape=(len(COLUMNS)), name="inputClassifier")
     # x = keras.layers.Dense(_nodes, activation=_activation, kernel_initializer=_initialization,
@@ -84,7 +84,7 @@ def createMultiClassifier(means, scale):
         x = keras.layers.BatchNormalization()(x)
         x = keras.layers.Dropout(_dropRate)(x)
 
-    _outputs = keras.layers.Dense(7, activation="softmax", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense_output")(x)
+    _outputs = keras.layers.Dense(4, activation="softmax", kernel_initializer=_initialization, kernel_regularizer=_regularizer, name="classifierDense_output")(x)
 
     model = keras.Model(inputs=_inputs, outputs=_outputs, name="Classifier")
 
@@ -123,7 +123,7 @@ def JensenShannonDivergence(y_true, y_pred):
 def gradReverse(x): #, gamma=1.0):
     y = tf.identity(x)
     def custom_gradient(dy):
-        return -50.0*dy
+        return -10.0*dy
     return y, custom_gradient
 
 class GradReverse(tf.keras.layers.Layer):
@@ -136,9 +136,9 @@ class GradReverse(tf.keras.layers.Layer):
 
 def createChainedModel(classifier, adversary):
     x = GradReverse()(classifier.output)
-#    full_output = adversary([x, adversary.input[1]])
-#    model = tf.keras.Model(inputs=[classifier.input, adversary.input[1]], outputs=[classifier.output, full_output]) #adversary(x)])
-    model = tf.keras.Model(inputs=classifier.input, outputs=[classifier.output, adversary(x)])
+    full_output = adversary([x, adversary.inputs[1]])
+    model = tf.keras.Model(inputs=[classifier.input, adversary.input[1]], outputs=[classifier.output, full_output]) #adversary(x)])
+#    model = tf.keras.Model(inputs=classifier.input, outputs=[classifier.output, adversary(x)])
     return model
 
 def createChainedModel_v3(classifier, adversary, gamma):
@@ -152,21 +152,22 @@ def createChainedModel_v3(classifier, adversary, gamma):
 from utilities import invertedEventTypeDict
 def createMultiAdversary():
     event_shape = [1]
-    numberOfComponents = 20
+    numberOfComponents = 10
 
     params_size = tfp.layers.MixtureNormal.params_size(numberOfComponents, event_shape)
 #    params_size = tfp.layers.MixtureSameFamily.params_size(numberOfGaussians,
 #                                                              component_params_size=tfp.layers.IndependentNormal.params_size(event_shape))
 
-    _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
-#    auxiliary = keras.Input(shape=(1), name="auxiliaryAdversary")
-#    x = keras.layers.Concatenate()([_inputs, auxiliary])
-    x = keras.layers.Dense(64, activation="relu", kernel_initializer='glorot_normal', name='hidden1')(_inputs) #(x)
+#    _inputs = keras.Input(shape=(len(invertedEventTypeDict)), name="inputAdversary")
+    _inputs = keras.Input(shape=4, name="inputAdversary")
+    auxiliary = keras.Input(shape=(2), name="auxiliaryAdversary")
+    x = keras.layers.Concatenate()([_inputs, auxiliary])
+    x = keras.layers.Dense(64, activation="relu", kernel_initializer='glorot_normal', name='hidden1')(x)
     x = keras.layers.Dense(params_size, activation=None, name='parameters')(x)
     out = tfp.layers.MixtureNormal(numberOfComponents, event_shape, name="out_adversary")(x)
 
-    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
-#    model = keras.Model(inputs=[_inputs, auxiliary], outputs=out, name="Adversary")
+#    model = keras.Model(inputs=_inputs, outputs=out, name="Adversary")
+    model = keras.Model(inputs=[_inputs, auxiliary], outputs=out, name="Adversary")
 
     return model
 

@@ -15,12 +15,12 @@ import sys
 from datetime import datetime
 
 
-tf.random.set_seed(23)
+tf.random.set_seed(13)
 
 print(tf.executing_eagerly())
 
-USEPRETRAINED = True
-#USEPRETRAINED = False
+#USEPRETRAINED = True
+USEPRETRAINED = False
 pretrainedClassifierModelPath = "./models/classifierSaved.h5"
 pretrainedAdversaryModelPath = "./models/adversarySaved.h5"
 
@@ -42,13 +42,12 @@ def main():
     testInputPreprocessed = testDF.copy()
     trainingInputPreprocessed.loc[:, COLUMNS_] = clipper.clip(trainingDF.loc[:, COLUMNS_])
     testInputPreprocessed.loc[:, COLUMNS_] = clipper.clip(testDF.loc[:, COLUMNS_])
+
     classifierTargets = tf.keras.utils.to_categorical(trainingInputPreprocessed.loc[:, "eventType"].values)
-#    adversaryTargets = tf.keras.utils.to_categorical(np.digitize(np.clip(trainingInputPreprocessed.loc[:, "TransverseMass"], PTMIN, PTMAX-1.0),
-#                                                                 bins=np.linspace(PTMIN, PTMAX, PTBINS+1)))
-#    adversaryTargets = np.array(np.digitize(np.clip(trainingInputPreprocessed.loc[:, "TransverseMass"], PTMIN, PTMAX-1.0),
-#                                                                 bins=np.linspace(PTMIN, PTMAX, PTBINS+1)), dtype=np.float32)
-    adversaryTargets = StandardScaler().fit_transform(trainingInputPreprocessed.loc[:,"TransverseMass"].to_numpy().reshape(-1, 1))
-    print(adversaryTargets[:5])
+    adversaryTargets = MinMaxScaler().fit_transform(trainingInputPreprocessed.loc[:,"TransverseMass"].to_numpy().reshape(-1, 1))
+
+    auxiliaryTrainingInput = MinMaxScaler().fit_transform(np.log(trainingInputPreprocessed.loc[:, ["tauPt", "MET"]]))
+    auxiliaryTestInputs = np.log(testInputPreprocessed.loc[:, ["tauPt", "MET"]])
 
     scaler = StandardScaler().fit(trainingInputPreprocessed[COLUMNS_])
     scale, means, vars = scaler.scale_, scaler.mean_, scaler.var_
@@ -64,11 +63,17 @@ def main():
 
         adversary = createMultiAdversary()
         adversary.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                          loss=lambda y, model: -model.log_prob(y+1e-8))
+                          loss=lambda y, model: -model.log_prob(y))
+
+        chainedModel = createChainedModel(classifier, adversary)
+        chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3, amsgrad=True),
+                             loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y)],
+                             loss_weights=[1.0, 10.0])
 
         classifier.fit(trainingInputPreprocessed.loc[:, COLUMNS_].to_numpy(), classifierTargets,   #trainDataset,
                        epochs=PRETRAINEPOCHS,
                        batch_size=BATCHSIZE,
+                       sample_weight=sampleWeights_classifier,
                        validation_split=0.1)
         classifier.save("models/classifier"+datetime.now().strftime("%Y%m%d-%H%M%S")+".h5")
 
@@ -78,7 +83,8 @@ def main():
 
 
         adversaryInput = classifier.predict(trainingInputPreprocessed.loc[:, COLUMNS_].to_numpy())
-        adversary.fit(adversaryInput, adversaryTargets,
+#        adversary.fit(adversaryInput, adversaryTargets,
+        adversary.fit([adversaryInput, auxiliaryTrainingInput], adversaryTargets,
                       epochs=PRETRAINEPOCHS,
                       sample_weight=sampleWeights_adversary,
                       batch_size=BATCHSIZE,
@@ -95,12 +101,19 @@ def main():
 
 
         adversary = tf.keras.models.load_model(pretrainedAdversaryModelPath,
-                                               custom_objects={'<lambda>': lambda y, model:-model.log_prob(y+1e-6)})
+                                               custom_objects={'<lambda>': lambda y, model:-model.log_prob(y)})
 
-    chainedModel = createChainedModel(classifier, adversary)
-    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=5e-4, amsgrad=True),
-                         loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y+1e-6)],
-                         loss_weights=[1.0, 10.0])
+    initial_learning_rate = 1e-5
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate,
+        decay_steps=10000,
+        decay_rate=0.96,
+        staircase=True)
+
+#    chainedModel = createChainedModel(classifier, adversary)
+#    chainedModel.compile(optimizer=tf.optimizers.Adam(learning_rate=lr_schedule, amsgrad=True),
+#                         loss=["categorical_crossentropy", lambda y, model:-model.log_prob(y)],
+#                         loss_weights=[1.0, 0.0]) #5.0])
 
     # print(classifier.summary())
     # print(adversary.summary())
@@ -115,16 +128,17 @@ def main():
     # gradientTapeCallback = GradientTapeCallBack(trainDataFrame[COLUMNS].to_numpy())
     #
 
-    chainedModel.fit(clipper.clip(trainingInputPreprocessed.loc[:, COLUMNS_]).to_numpy(), [classifierTargets, adversaryTargets],
+    chainedModel.fit([trainingInputPreprocessed.loc[:, COLUMNS_].to_numpy(),auxiliaryTrainingInput] , [classifierTargets, adversaryTargets],
+#    chainedModel.fit([trainingInputPreprocessed.loc[:, COLUMNS_].to_numpy()] , [classifierTargets, adversaryTargets],
                      epochs=TRAINEPOCHS,
                      batch_size=BATCHSIZE,
                      sample_weight={"classifierDense_output": sampleWeights_classifier, "Adversary": sampleWeights_adversary})
                      # callbacks=[gradientTapeCallback, tensorboardCallback])
 
 
-    classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterAllBkgsTest")
-    jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "AfterTest")
-    multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterTest")
+    classifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterAllBkgsTest"+datetime.now().strftime("%Y%m%d-%H%M%S"))
+    jsdScoresMulti(classifier, testInputPreprocessed.loc[:, COLUMNS_],testDF, testDF.loc[:, "TransverseMass"], "AfterTest"+datetime.now().strftime("%Y%m%d-%H%M%S"))
+    multiClassClassifierVsX(classifier, testInputPreprocessed.loc[:, COLUMNS_], testDF, "TransverseMass", testDF.loc[:, "TransverseMass"], "AfterTest"+datetime.now().strftime("%Y%m%d-%H%M%S"))
 
     classifier.save("models/classifier.h5")
 

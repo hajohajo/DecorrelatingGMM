@@ -10,23 +10,24 @@ from sklearn.utils import compute_sample_weight
 def getClassifierSampleWeights(dataframe):
     weights = compute_sample_weight('balanced', dataframe.loc[:, "eventType"])
 
+    binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
+    digitizedSamples = np.digitize(np.clip(dataframe['TransverseMass'].values, PTMIN, PTMAX-1.0),
+                                   bins=binning, right=False).astype(np.float32)
+    weights = np.ones(dataframe.shape[0])
+
+    weights = compute_sample_weight('balanced', digitizedSamples)
+
     return weights
 
 def getAdversarySampleWeights(dataframe):
     binning = np.linspace(PTMIN, PTMAX, PTBINS+1)
     digitizedSamples = np.digitize(np.clip(dataframe['TransverseMass'].values, PTMIN, PTMAX-1.0),
                                    bins=binning, right=False).astype(np.float32)
-    weights = compute_sample_weight('balanced', digitizedSamples)
+    weights = np.ones(dataframe.shape[0])
+    weights[dataframe.eventType != 0] = compute_sample_weight('balanced', digitizedSamples[dataframe.eventType != 0])
     weights[dataframe.eventType == 0] = 0
 
     return weights
-
-def clipDataFrameToQuantiles(dataframe, lowerQuantile=0.2, upperQuantile=0.8):
-    if(len(dataframe.shape) > 1):
-        returnFrame = dataframe.clip(dataframe.quantile(lowerQuantile), dataframe.quantile(upperQuantile), axis=1)
-        return returnFrame
-    returnFrame = dataframe.clip(dataframe.quantile(lowerQuantile), dataframe.quantile(upperQuantile))
-    return returnFrame
 
 class quantileClipper():
     def __init__(self, lowerQuantile=0.1, upperQuantile=0.9):
@@ -47,10 +48,10 @@ class quantileClipper():
 eventTypeDict = {
     "ChargedHiggs_" : 0,
     "TT_" : 1,
-    "DYJets" : 2,
-    "QCD_" : 3,
-    "ST_" : 4,
-    "WJets" : 5,
+    "ST_" : 2,
+    "WJets" : 3,
+    "DYJets" : 4,
+    "QCD_" : 5,
     "WW" : 6,
     "WZ" : 6,
     "ZZ" : 6
@@ -59,16 +60,17 @@ eventTypeDict = {
 invertedEventTypeDict = {
     0 : "Signal",
     1 : "TT",
-    2 : "DY",
-    3 : "QCD",
-    4 : "ST",
-    5 : "WJets",
+    2 : "ST",
+    3 : "WJets",
+    4 : "DY",
+    5 : "QCD",
     6 : "Diboson"
 }
 
 def readDatasetsToDataframes(pathToFolder):
     listOfDatasets = []
-    identifiers = ["ChargedHiggs_", "TT_", "DYJets", "QCD_", "ST_", "WJets", "WW", "WZ", "ZZ"]
+#    identifiers = ["ChargedHiggs_", "TT_", "DYJets", "QCD_", "ST_", "WJets", "WW", "WZ", "ZZ"]
+    identifiers = ["ChargedHiggs_", "TT_", "ST_", "WJets"]
     for identifier in identifiers:
         filePaths = glob.glob(pathToFolder + identifier+"*.root")
         dataset = read_root(filePaths, columns=COLUMNS_)

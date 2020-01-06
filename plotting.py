@@ -14,7 +14,7 @@ xBinning = {"tauPt" : np.linspace(0.0, 500.0, 100),
             "deltaPhiTauMet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiTauBjet" : np.linspace(0.0, np.pi, 30),
             "deltaPhiBjetMet" : np.linspace(0.0, np.pi, 30),
-            "TransverseMass" : np.linspace(0.0, 500.0, 101)}
+            "TransverseMass" : np.linspace(0.0, 500.0, 26)}
 #            "TransverseMass": np.linspace(200.0, 300.0, 21)}
 
 xLabel = {"tauPt" : r"Tau p$_T$",
